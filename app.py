@@ -11,6 +11,15 @@ load_dotenv()
 # Cache Data Loading Function
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
+def map_category(labels):
+    names = [l['name'].lower() for l in labels]
+    if 'bug' in names:
+        return 'Backend'
+    elif 'ui' in names:
+        return 'UI'
+    else:
+        return 'Other'
+    
 @st.cache_data
 def load_data():
     repo = "microsoft/vscode"  # you can change this
@@ -55,6 +64,10 @@ def load_data():
 
     df['Severity'] = df['labels'].apply(
         lambda x: 'High' if any('bug' in lbl['name'].lower() for lbl in x) else 'Medium'
+
+        ## lambda x: 'High' if any('bug' in lbl['name'].lower() for lbl in x) 
+        ## else ('Medium' if any('enhancement' in lbl['name'].lower() for lbl in x) 
+        ## else 'Low')
     )
 
     df['Module'] = repo.split('/')[1]
@@ -78,6 +91,11 @@ def load_data():
 
 df = load_data()
 
+# Refresh Button
+if st.sidebar.button("🔄 Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
+
 # Streamlit Page Config
 st.set_page_config(page_title="Defect Analysis Dashboard", layout="wide")
 st.title("🚨 Defect Analysis Dashboard")
@@ -87,34 +105,35 @@ st.title("🚨 Defect Analysis Dashboard")
 st.sidebar.header("📊 Filter Defects")
 
 category_filter = st.sidebar.multiselect(
-    "Select Category", options=df['Category'].cat.categories.tolist(), 
+    "Select Category", 
+    options=df['Category'].cat.categories.tolist(), 
     default=df['Category'].cat.categories.tolist()
 )
 
 severity_filter = st.sidebar.multiselect(
-    "Select Severity", options=df['Severity'].cat.categories.tolist(), 
+    "Select Severity", 
+    options=df['Severity'].cat.categories.tolist(), 
     default=df['Severity'].cat.categories.tolist()
 )
 
 module_filter = st.sidebar.multiselect(
-    "Select Module", options=df['Module'].cat.categories.tolist(), 
+    "Select Module", 
+    options=df['Module'].cat.categories.tolist(), 
     default=df['Module'].cat.categories.tolist()
 )
 
 date_range = st.sidebar.date_input(
-    "Select Reported Date Range", [df['Reported Date'].min().date(), df['Reported Date'].max().date()]
+    "Select Reported Date Range", 
+    [df['Reported Date'].min().date(), df['Reported Date'].max().date()]
 )
 
 # Filter Data Function
 @st.cache_data
 def filter_data(df, categories, severities, modules, date_range):
 
-    start_date = pd.to_datetime(date_range[0])
-    end_date = pd.to_datetime(date_range[1])
-
     if df.empty:
         return df
-
+    
     start_date = pd.to_datetime(date_range[0])
     end_date = pd.to_datetime(date_range[1])
     
@@ -134,8 +153,16 @@ st.subheader("📌 Key Metrics")
 kpi1, kpi2, kpi3 = st.columns(3)
 
 kpi1.metric("Total Defects", len(filtered_df))
-kpi2.metric("Avg. Resolution Time (days)", round(filtered_df['Resolution Time (days)'].mean(), 2))
-kpi3.metric("Critical Defects", len(filtered_df[filtered_df['Severity'] == 'Critical']))
+
+kpi2.metric(
+    "Avg. Resolution Time (days)", 
+    round(filtered_df['Resolution Time (days)'].mean(), 2)
+)
+kpi3.metric(
+    "Critical Defects", 
+    len(filtered_df[filtered_df['Severity'] == 'High'])
+    ## len(filtered_df[filtered_df['Severity'] == 'Critical'])
+)
 
 # Visualizations
 st.subheader("📈 Visualizations")
@@ -157,8 +184,12 @@ with col2:
 st.subheader("🗺️ Heatmap: Category vs Module")
 heatmap_df = filtered_df.groupby(['Category', 'Module']).size().reset_index(name='Count')
 fig3 = px.density_heatmap(
-    heatmap_df, x='Category', y='Module', z='Count',
-    color_continuous_scale='Reds', title="Heatmap of Defects"
+    heatmap_df, 
+    x='Category', 
+    y='Module', 
+    z='Count',
+    color_continuous_scale='Reds', 
+    title="Heatmap of Defects"
 )
 st.plotly_chart(fig3, use_container_width=True)
 
