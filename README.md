@@ -82,7 +82,7 @@ An expandable data table allows users to inspect the filtered dataset directly, 
 
 ```bash
 git clone <repository-url>
-cd defect-analysis-dashboard
+cd Defect-Analysis-Dashboard
 ```
 
 2. Install dependencies:
