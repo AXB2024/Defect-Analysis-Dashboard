@@ -6,6 +6,8 @@ import requests
 from dotenv import load_dotenv
 import os
 
+from sklearn.ensemble import RandomForestRegressor
+
 load_dotenv()
 
 # Cache Data Loading Function
@@ -22,8 +24,11 @@ def map_category(labels):
     
 @st.cache_data
 def load_data():
-    repo = "microsoft/vscode"  # you can change this
-    url = f"https://api.github.com/repos/{repo}/issues"
+    repos = [
+        "microsoft/vscode",
+        "facebook/react",
+        "tensorflow/tensorflow"
+    ]
 
     headers = {
         "Accept": "application/vnd.github+json"
@@ -32,62 +37,87 @@ def load_data():
     if GITHUB_TOKEN:
         headers["Authorization"] = f"token {GITHUB_TOKEN}"
 
-    params = {
-        "state": "all",
-        "per_page": 100,
-        "page": 1
-    }
-
     all_issues = []
 
-    # Pagination (get up to ~1000 issues)
-    for page in range(1, 11):
-        params["page"] = page
-        response = requests.get(url, headers=headers, params=params)
-        data = response.json()
+    for repo in repos:
+        url = f"https://api.github.com/repos/{repo}/issues"
 
-        if not data:
-            break
+        for page in range(1, 6):  # ~500 per repo
+            response = requests.get(url, headers=headers, params={
+                "state": "all",
+                "per_page": 100,
+                "page": page
+            })
 
-        all_issues.extend(data)
+            data = response.json()
+            if not data:
+                break
 
-    # Convert to DataFrame
+            for issue in data:
+                if "pull_request" in issue:
+                    continue
+
+                issue["repo"] = repo
+                all_issues.append(issue)
+
     df = pd.DataFrame(all_issues)
 
-    # Remove pull requests (GitHub mixes them)
-    df = df[~df['pull_request'].notna()]
+    if df.empty:
+        return df
 
-    # Extract fields
-    df['Category'] = df['labels'].apply(
-        lambda x: x[0]['name'] if x else 'Other'
-    )
+    # -------------------------------
+    # 🔥 TRANSFORM DATA
+    # -------------------------------
+    df['Module'] = df['repo'].apply(lambda x: x.split('/')[1])
+    df['Category'] = df['labels'].apply(map_category)
 
     df['Severity'] = df['labels'].apply(
-        lambda x: 'High' if any('bug' in lbl['name'].lower() for lbl in x) else 'Medium'
-
-        ## lambda x: 'High' if any('bug' in lbl['name'].lower() for lbl in x) 
-        ## else ('Medium' if any('enhancement' in lbl['name'].lower() for lbl in x) 
-        ## else 'Low')
+        lambda x: 'Critical' if any('critical' in l['name'].lower() for l in x)
+        else 'High' if any('bug' in l['name'].lower() for l in x)
+        else 'Medium'
     )
 
-    df['Module'] = repo.split('/')[1]
-
     df['Reported Date'] = pd.to_datetime(df['created_at'], errors='coerce').dt.tz_localize(None)
-
     df['Closed Date'] = pd.to_datetime(df['closed_at'], errors='coerce').dt.tz_localize(None)
 
     df['Resolution Time (days)'] = (
         df['Closed Date'] - df['Reported Date']
     ).dt.days
 
-    # Drop rows where issue is still open
     df = df.dropna(subset=['Resolution Time (days)'])
+
+    # -------------------------------
+    # 🔥 FEATURE ENGINEERING (ML)
+    # -------------------------------
+    df['num_labels'] = df['labels'].apply(len)
+    df['title_length'] = df['title'].apply(lambda x: len(str(x)))
+    df['is_bug'] = df['labels'].apply(
+        lambda x: int(any('bug' in l['name'].lower() for l in x))
+    )
+
+    # -------------------------------
+    # 🔥 ML MODEL
+    # -------------------------------
+    features = ['num_labels', 'title_length', 'is_bug']
+    target = 'Resolution Time (days)'
+
+    if len(df) > 50:  # avoid crash on small data
+        X = df[features]
+        y = df[target]
+
+        model = RandomForestRegressor(n_estimators=50)
+        model.fit(X, y)
+
+        df['Predicted Resolution Time'] = model.predict(X)
+    else:
+        df['Predicted Resolution Time'] = df['Resolution Time (days)']
 
     # Optimize
     for col in ['Category', 'Severity', 'Module']:
         df[col] = df[col].astype('category')
 
     return df
+
 
 df = load_data()
 
@@ -150,7 +180,7 @@ filtered_df = filter_data(df, category_filter, severity_filter, module_filter, d
 
 # KPI Metrics
 st.subheader("📌 Key Metrics")
-kpi1, kpi2, kpi3 = st.columns(3)
+kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
 kpi1.metric("Total Defects", len(filtered_df))
 
@@ -162,6 +192,10 @@ kpi3.metric(
     "Critical Defects", 
     len(filtered_df[filtered_df['Severity'] == 'High'])
     ## len(filtered_df[filtered_df['Severity'] == 'Critical'])
+)
+kpi4.metric(
+    "Predicted Resolution",
+    round(filtered_df['Predicted Resolution Time'].mean(), 2)
 )
 
 # Visualizations
@@ -198,7 +232,9 @@ st.plotly_chart(fig3, use_container_width=True)
 st.subheader("🧾 Raw Data (Paginated)")
 page_size = 500
 total_pages = (len(filtered_df) // page_size) + 1
+
 page_number = st.number_input("Page", min_value=1, max_value=total_pages, value=1)
+
 start = (page_number - 1) * page_size
 end = start + page_size
 
