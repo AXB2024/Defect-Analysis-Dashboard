@@ -26,8 +26,8 @@ def map_category(labels):
 def load_data():
     repos = [
         "microsoft/vscode",
-        "facebook/react",
-        "tensorflow/tensorflow"
+        "facebook/react"
+        ## "tensorflow/tensorflow"
     ]
 
     headers = {
@@ -36,6 +36,7 @@ def load_data():
 
     if GITHUB_TOKEN:
         headers["Authorization"] = f"token {GITHUB_TOKEN}"
+
 
     all_issues = []
 
@@ -87,7 +88,7 @@ def load_data():
     df = df.dropna(subset=['Resolution Time (days)'])
 
     # -------------------------------
-    # 🔥 FEATURE ENGINEERING (ML)
+    # FEATURE ENGINEERING (ML)
     # -------------------------------
     df['num_labels'] = df['labels'].apply(len)
     df['title_length'] = df['title'].apply(lambda x: len(str(x)))
@@ -96,7 +97,7 @@ def load_data():
     )
 
     # -------------------------------
-    # 🔥 ML MODEL
+    # ML MODEL
     # -------------------------------
     features = ['num_labels', 'title_length', 'is_bug']
     target = 'Resolution Time (days)'
