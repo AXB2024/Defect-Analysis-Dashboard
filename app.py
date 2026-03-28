@@ -7,18 +7,58 @@ from dotenv import load_dotenv
 import os
 
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+
+def train_nlp_model(df):
+    # Combine text
+    df['text'] = df['title'].fillna('') + " " + df['body'].fillna('')
+
+    # Use existing category as weak labels
+    df = df[df['Category'] != 'Other']
+
+    if len(df) < 50:
+        return None, None
+
+    vectorizer = TfidfVectorizer(max_features=5000, stop_words='english')
+    X = vectorizer.fit_transform(df['text'])
+    y = df['Category']
+
+    model = LogisticRegression(max_iter=200)
+    model.fit(X, y)
+
+    return model, vectorizer
 
 load_dotenv()
 
 # Cache Data Loading Function
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
-def map_category(labels):
+"""def map_category(labels):
     names = [l['name'].lower() for l in labels]
     if 'bug' in names:
         return 'Backend'
     elif 'ui' in names:
         return 'UI'
+    else:
+        return 'Other'
+"""
+
+# CATEGORY MAPPING (UPGRADE)
+def map_category(labels):
+    names = [l['name'].lower() for l in labels]
+
+    if any(x in names for x in ['ui', 'frontend']):
+        return 'UI'
+    elif any(x in names for x in ['backend', 'api']):
+        return 'Backend'
+    elif any(x in names for x in ['performance', 'slow']):
+        return 'Performance'
+    elif any(x in names for x in ['integration', 'compatibility']):
+        return 'Integration'
+    elif any('bug' in x for x in names):
+        return 'Backend'
     else:
         return 'Other'
     
@@ -27,7 +67,7 @@ def load_data():
     repos = [
         "microsoft/vscode",
         "facebook/react"
-        ## "tensorflow/tensorflow"
+        ##"tensorflow/tensorflow"
     ]
 
     headers = {
@@ -88,6 +128,18 @@ def load_data():
     df = df.dropna(subset=['Resolution Time (days)'])
 
     # -------------------------------
+    # 🧠 NLP MODEL
+    # -------------------------------
+    model, vectorizer = train_nlp_model(df)
+
+    if model is not None:
+        df['text'] = df['title'].fillna('') + " " + df['body'].fillna('')
+        X_all = vectorizer.transform(df['text'])
+        df['NLP Category'] = model.predict(X_all)
+    else:
+        df['NLP Category'] = df['Category']
+
+    # -------------------------------
     # FEATURE ENGINEERING (ML)
     # -------------------------------
     df['num_labels'] = df['labels'].apply(len)
@@ -131,6 +183,15 @@ if st.sidebar.button("🔄 Refresh Data"):
 st.set_page_config(page_title="Defect Analysis Dashboard", layout="wide")
 st.title("🚨 Defect Analysis Dashboard")
 
+# -------------------------------
+# CATEGORY MODE TOGGLE
+# -------------------------------
+category_mode = st.sidebar.radio(
+    "Category Type",
+    ["Rule-Based", "NLP-Based"]
+)
+
+category_column = 'Category' if category_mode == "Rule-Based" else 'NLP Category'
 
 # Sidebar Filters
 st.sidebar.header("📊 Filter Defects")
@@ -158,18 +219,19 @@ date_range = st.sidebar.date_input(
     [df['Reported Date'].min().date(), df['Reported Date'].max().date()]
 )
 
+
 # Filter Data Function
 @st.cache_data
-def filter_data(df, categories, severities, modules, date_range):
-
+def filter_data(df, categories, severities, modules, date_range, category_column):
     if df.empty:
         return df
-    
     start_date = pd.to_datetime(date_range[0])
     end_date = pd.to_datetime(date_range[1])
     
     filtered = df[
-        (df['Category'].isin(categories)) &
+        ## (df['Category'].isin(categories)) &
+        ## (category_column in df.columns) &
+        (df[category_column].isin(categories)) &
         (df['Severity'].isin(severities)) &
         (df['Module'].isin(modules)) &
         (df['Reported Date'] >= start_date) &
@@ -177,7 +239,7 @@ def filter_data(df, categories, severities, modules, date_range):
     ]
     return filtered
 
-filtered_df = filter_data(df, category_filter, severity_filter, module_filter, date_range)
+filtered_df = filter_data(df, category_filter, severity_filter, module_filter, date_range, category_column)
 
 # KPI Metrics
 st.subheader("📌 Key Metrics")
@@ -217,10 +279,12 @@ with col2:
 
 # Heatmap: Category vs Module
 st.subheader("🗺️ Heatmap: Category vs Module")
-heatmap_df = filtered_df.groupby(['Category', 'Module']).size().reset_index(name='Count')
+## heatmap_df = filtered_df.groupby(['Category', 'Module']).size().reset_index(name='Count')
+heatmap_df = filtered_df.groupby([category_column, 'Module']).size().reset_index(name='Count')
 fig3 = px.density_heatmap(
     heatmap_df, 
-    x='Category', 
+    ## x='Category', 
+    x = category_column,
     y='Module', 
     z='Count',
     color_continuous_scale='Reds', 
