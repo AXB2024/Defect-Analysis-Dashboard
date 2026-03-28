@@ -106,9 +106,7 @@ def load_data():
     if df.empty:
         return df
 
-    # -------------------------------
-    # 🔥 TRANSFORM DATA
-    # -------------------------------
+    # TRANSFORM DATA
     df['Module'] = df['repo'].apply(lambda x: x.split('/')[1])
     df['Category'] = df['labels'].apply(map_category)
 
@@ -127,9 +125,7 @@ def load_data():
 
     df = df.dropna(subset=['Resolution Time (days)'])
 
-    # -------------------------------
-    # 🧠 NLP MODEL
-    # -------------------------------
+    # NLP MODEL
     model, vectorizer = train_nlp_model(df)
 
     if model is not None:
@@ -139,18 +135,14 @@ def load_data():
     else:
         df['NLP Category'] = df['Category']
 
-    # -------------------------------
     # FEATURE ENGINEERING (ML)
-    # -------------------------------
     df['num_labels'] = df['labels'].apply(len)
     df['title_length'] = df['title'].apply(lambda x: len(str(x)))
     df['is_bug'] = df['labels'].apply(
         lambda x: int(any('bug' in l['name'].lower() for l in x))
     )
 
-    # -------------------------------
     # ML MODEL
-    # -------------------------------
     features = ['num_labels', 'title_length', 'is_bug']
     target = 'Resolution Time (days)'
 
@@ -183,9 +175,7 @@ if st.sidebar.button("🔄 Refresh Data"):
 st.set_page_config(page_title="Defect Analysis Dashboard", layout="wide")
 st.title("🚨 Defect Analysis Dashboard")
 
-# -------------------------------
 # CATEGORY MODE TOGGLE
-# -------------------------------
 category_mode = st.sidebar.radio(
     "Category Type",
     ["Rule-Based", "NLP-Based"]
