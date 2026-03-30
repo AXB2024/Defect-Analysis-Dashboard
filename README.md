@@ -1,117 +1,88 @@
-# Defect Analysis Dashboard
+# 🚨 AI-Powered Defect Analysis Dashboard
 
-## Overview
+## 📌 Overview
+This project is a full-stack, AI-powered defect analytics dashboard built using **Streamlit, Python, and Machine Learning**. It pulls real-time issue data from GitHub repositories and transforms it into meaningful insights using data visualization, predictive modeling, and natural language processing (NLP).
 
-The **Defect Analysis Dashboard** is an interactive data visualization tool built with **Python** and **Streamlit** to explore, filter, and analyze software defect data. The dashboard is designed to help users quickly identify defect patterns, severity distribution, resolution efficiency, and risk-prone areas across different modules and categories.
-
-This project focuses on *clarity, usability, and analytical insight* rather than static reporting, allowing stakeholders to explore defects dynamically instead of relying on manual spreadsheets.
-
-
-
-## Features
-
-### 🔎 Interactive Filtering
-
-Users can filter defects in real time using:
-
-* **Category** (UI, Backend, Performance, Integration, etc.)
-* **Severity** (Critical, High, Medium, Low)
-* **Module** (Login, Dashboard, Payments, Reports, Settings)
-* **Reported Date Range**
-
-All visualizations and metrics update instantly based on selected filters.
-
-
-
-### 📌 Key Metrics (KPIs)
-
-The dashboard surfaces high-level indicators to summarize system health:
-
-* **Total Defects** – number of defects matching selected filters
-* **Average Resolution Time** – mean days to resolve defects
-* **Critical Defects Count** – immediate risk visibility
-
-These KPIs allow quick assessment before diving into detailed charts.
-
-
-
-### 📊 Visual Analytics
-
-#### 1. Defects by Severity (Bar Chart)
-
-Highlights how defects are distributed across severity levels, helping prioritize engineering effort.
-
-#### 2. Defect Trend Over Time (Line Chart)
-
-Displays how defect volume changes over time, making it easier to spot spikes, regressions, or stability periods.
-
-#### 3. Category vs Module Heatmap
-
-Visualizes defect concentration across categories and modules to identify high-risk combinations and recurring problem areas.
-
-
-
-### 🧾 Raw Data Exploration
-
-An expandable data table allows users to inspect the filtered dataset directly, supporting transparency and deeper analysis.
-
-
-
-## Tech Stack
-
-* **Python** – core programming language
-* **Streamlit** – interactive web dashboard framework
-* **Pandas** – data manipulation and filtering
-* **Plotly Express** – interactive visualizations
-
-
-
-## Project Structure
-
-```
-├── app.py               # Main Streamlit application
-├── requirements.txt    # Project dependencies
-└── README.md            # Project documentation
-```
+The goal of this project is to simulate how real engineering teams track, analyze, and predict software defects.
 
 ---
 
-## How to Run the Dashboard
+## 🚀 Key Features
 
-1. Clone the repository:
+### 🔹 Real-Time Data Pipeline
+* Fetches live issue data from multiple GitHub repositories.
+* Handles pagination, filtering, and preprocessing.
+* Converts raw issue data into structured defect metrics.
 
-```bash
-git clone <repository-url>
-cd Defect-Analysis-Dashboard
-```
+### 🔹 Interactive Dashboard
+* Filter defects by category, severity, module, and date.
+* **Visualizations include:**
+    * Defects by severity
+    * Time-series trends
+    * Heatmaps (Category vs. Module)
+* Paginated raw data view for large datasets.
 
-2. Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-3. Run the Streamlit app:
-
-```bash
-streamlit run app.py
-```
-
-4. Open the local URL provided by Streamlit in your browser.
-
----
-
-## Data Notes
-
-* The current implementation uses sample defect data generated within the script.
-* The dashboard can be easily extended to ingest data from:
-
-  * CSV files
-  * Databases
-  * Issue tracking systems (e.g., Jira exports)
+### 🔹 Machine Learning (Regression)
+* Predicts **resolution time (in days)** for defects.
+* **Features used:**
+    * Number of labels
+    * Issue title length
+    * Bug indicators
+* **Model:** Random Forest Regressor
 
 ---
 
-## Future Enhancements
+## 🧠 NLP-Based Categorization (Core Idea)
 
-* Integration with real defect tracking tools
+### ❓ The Problem
+GitHub issues do not come with clean, structured categories like **UI**, **Backend**, or **Performance**. Instead, they contain unstructured text, making manual analysis slow and difficult.
+
+### 🧪 Step 1: TF-IDF + Logistic Regression (Baseline)
+We first implemented a lightweight NLP pipeline:
+* **TF-IDF:** Converts issue text into numerical features based on word importance.
+* **Logistic Regression:** Learns patterns between words and categories.
+* *Example:* `"API returns error"` → **Backend**
+
+### ⚠️ Limitation
+TF-IDF treats words independently. It doesn't understand that `"login failed"` and `"auth error"` mean the same thing.
+
+### 🔥 Step 2: Embedding-Based NLP (Advanced)
+To improve accuracy, we upgraded to **sentence embeddings** using `sentence-transformers`.
+* Converts entire sentences into dense vectors.
+* Captures **semantic meaning** (not just keywords).
+* *Example:* `"login failed"` ≈ `"authentication error"` → Correctly grouped.
+
+---
+
+## 🔍 Explainable AI (XAI)
+To make predictions transparent, we use **cosine similarity** to find similar past issues and display them to justify predictions. This answers: *"Why was this issue classified as Backend?"*
+
+## 🧩 Unsupervised Learning (Clustering)
+For issues that don’t fit known categories, we apply **K-Means clustering** to group similar unknown issues together, helping discover hidden patterns in defects.
+
+---
+
+## 🧱 Tech Stack
+
+| Category | Tools |
+| :--- | :--- |
+| **Frontend** | Streamlit |
+| **Data** | Pandas, GitHub Issues API |
+| **Visualization** | Plotly |
+| **ML Models** | Random Forest, Logistic Regression |
+| **NLP** | TF-IDF, Sentence Transformers (BERT-based) |
+
+---
+
+## 📊 Why This Project Matters
+This project mimics real-world engineering analytics systems by combining data pipelines, machine learning, and interactive dashboards. It demonstrates how raw, unstructured data can be transformed into actionable insights.
+
+## 🚀 Future Improvements
+* Semantic search (natural language query over issues).
+* LLM-based chatbot for defect analysis.
+* SLA breach prediction.
+
+---
+
+## 💬 Author
+**Abhinav Binu** Computer Science @ UT Dallas
