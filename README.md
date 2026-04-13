@@ -55,7 +55,7 @@ To improve accuracy, we upgraded to **sentence embeddings** using `sentence-tran
 ---
 
 ## 🔍 Explainable AI (XAI)
-To make predictions transparent, we use **cosine similarity** to find similar past issues and display them to justify predictions. This answers: *"Why was this issue classified as Backend?"*
+To make predictions transparent, I used a **cosine similarity** to find similar past issues and display them to justify predictions. This answers: *"Why was this issue classified as Backend?"*
 
 ## 🧩 Unsupervised Learning (Clustering)
 For issues that don’t fit known categories, we apply **K-Means clustering** to group similar unknown issues together, helping discover hidden patterns in defects.
