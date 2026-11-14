@@ -178,7 +178,7 @@ Speed-up (legacy median / new median): **2.86×**; 5 trials each.
 | | legacy app | new architecture |
 |---|---|---|
 | calls when the dashboard (re)loads | **15** per cache miss (5 pages × vscode, plus 5 pages × react where each page is a 301 redirect followed by the real request) | **0**: the dashboard never calls GitHub |
-| calls to keep data fresh | none: data is frozen until someone clicks Refresh, which re-fetches all 15 | the ingestion job, see 4c: 2 calls per 15-min run, 1 billable (measured over 2 runs) |
+| calls to keep data fresh | none: data is frozen until someone clicks Refresh, which re-fetches all 15 | the ingestion job, see 4c: 2 calls per 15-min run, mean 1.375 billable (8 runs) |
 
 ### 4c. Ingestion latency: issue created → queryable in the lake
 
@@ -187,29 +187,48 @@ python -m benchmarks.schedule_local --store data --interval 900 --runs 8      # 
 python -m benchmarks.summarize_runs --store data --since 2026-11-14T19:30:06+00:00   # -> scheduled_runs.json
 ```
 
-This is the deployed schedule simulated locally: the same `run_ingestion` code every 900 s
-against the live GitHub API and the local lake. **Only the first 2 of 8 runs had
-completed when this file was written** (2026-11-14T19:30:07 → 2026-11-14T19:45:07 UTC), so
-treat this section as a first sample. The simulator is still running; re-run the
-`summarize_runs` command above to refresh the numbers.
+This simulates the deployed schedule locally: the same `run_ingestion` code runs every 900 s
+against the live GitHub API and the local lake, 8 runs in total. **All 8 succeeded.**
 
-| metric | value |
+**Caveat: the laptop slept during the simulation.** A sleeping Mac pauses the 15-minute
+wait, so 3 of the 7 gaps between runs were longer than 16 minutes. One of them was 2 h 3.5 min,
+before run 8. An issue created during a gap waits for the next run, so latency samples
+from late runs measure the laptop's sleep, not the pipeline. A real EventBridge schedule
+doesn't drift this way.
+
+| run | started (UTC) | gap since previous | API calls | of which 304 | records upserted | run duration (s) | new-issue latency samples (s) |
+|---|---|---|---|---|---|---|---|
+| 1 | 19:30:07 | - | 2 | 1 | 12 | 1.47 | - |
+| 2 | 19:45:07 | 15.0 min | 2 | 1 | 16 | 1.328 | 591.5 |
+| 3 | 20:00:07 | 15.0 min | 2 | 1 | 13 | 1.299 | 344.4 |
+| 4 | 20:23:25 | 23.3 min | 2 | 0 | 24 | 1.721 | - |
+| 5 | 20:38:25 | 15.0 min | 2 | 0 | 11 | 1.633 | - |
+| 6 | 21:01:42 | 23.3 min | 2 | 1 | 0 | 2.428 | - |
+| 7 | 21:16:41 | 15.0 min | 2 | 1 | 14 | 1.384 | 602.8 |
+| 8 | 23:20:11 | 123.5 min | 2 | 0 | 36 | 1.575 | 4112.5, 1731.5, 6258.5 |
+
+| metric (all 8 runs) | value |
 |---|---|
-| incremental runs | 2 (success: 2) |
-| API calls per run (both repos) | 2 (min 2, max 2) |
-| billable calls per run | 1: vscode changes every 15 min (200), react was idle (304, free) |
-| repo polls answered 304 | 2/4 |
-| records upserted | 28 |
-| run duration | median 1.399 s, max 1.47 s |
-| new issues observed | 1 |
-| created → queryable latency | **591.5 s** (single sample) |
+| status | success: 8 |
+| API calls per run (both repos) | 2 every run |
+| billable calls per run | mean 1.375 (min 1, max 2) |
+| repo polls answered 304 (free) | 5/16 |
+| records upserted | 126 |
+| run duration | median 1.5225 s, max 2.428 s |
 
-Latency here means `created_at` → the moment the Parquet write finished. That's the time
-the issue becomes visible to Athena and to the dashboard's next cache refresh. The dashboard
-adds up to `DATA_TTL_S = 300` s of cache by configuration; that part wasn't measured. With a
-15-minute schedule, the expected worst case is about 900 s plus run time. One sample can't
-support a percentile claim, so p50/p95 need the full run set (or the deployed schedule).
+**Latency (created_at → Parquet write finished):**
+- **On-schedule runs** (gap ≤ 16 min): 3 samples, 344.4, 591.5, 602.8 s. All are under
+  the 900 s schedule interval, as expected: an issue waits at most one interval plus the run time.
+- **Late runs**: 3 samples, 1731.5, 4112.5, 6258.5 s. These are inflated by
+  the sleep gap and are not a pipeline measurement.
+- All 6 samples together (what `summarize_runs` reports): p50
+  1167.15 s, max 6258.5 s.
+  The late runs dominate this, so it isn't representative.
 
+3 on-schedule samples are too few for reliable percentiles. The next step is to measure
+on the deployed Lambda schedule, where a laptop can't sleep, with
+`python -m benchmarks.summarize_runs --store s3://<bucket>`. The dashboard adds up to
+`DATA_TTL_S = 300` s of cache by configuration; that part wasn't measured.
 
 ## 5. Weak results and next steps
 
