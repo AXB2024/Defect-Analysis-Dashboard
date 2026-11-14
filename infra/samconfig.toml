@@ -12,7 +12,7 @@ lint = true
 [default.deploy.parameters]
 resolve_s3 = true
 s3_prefix = "defect-dashboard"
-region = "us-east-1"
+region = "us-east-2"
 capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
 confirm_changeset = false
 fail_on_empty_changeset = false

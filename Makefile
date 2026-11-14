@@ -1,6 +1,9 @@
 PY        ?= python
 STACK     ?= defect-dashboard
-REGION    ?= us-east-1
+# us-east-2: the AWS organization's SCP blocks CloudFormation in us-east-1.
+REGION    ?= us-east-2
+# Set CREATE_OIDC=false when the GitHub OIDC provider already exists (e.g. created by an org admin).
+CREATE_OIDC ?= true
 DATA_URI  ?= data
 SAM       ?= sam
 BUCKET     = $(shell aws cloudformation describe-stacks --stack-name $(STACK) --region $(REGION) \
@@ -38,9 +41,10 @@ deploy: build       ## make deploy ALERT_EMAIL=you@example.com
 	cd infra && $(SAM) deploy --stack-name $(STACK) --region $(REGION) \
 	  --parameter-overrides AlertEmail=$(ALERT_EMAIL)
 
-bootstrap:          ## one-time: GitHub OIDC roles.  make bootstrap GITHUB_REPO=owner/repo
+bootstrap:          ## one-time: GitHub OIDC roles.  make bootstrap GITHUB_REPO=owner/repo [CREATE_OIDC=false]
 	aws cloudformation deploy --template-file infra/bootstrap.yaml --stack-name $(STACK)-bootstrap \
-	  --region $(REGION) --capabilities CAPABILITY_NAMED_IAM --parameter-overrides GitHubRepo=$(GITHUB_REPO)
+	  --region $(REGION) --capabilities CAPABILITY_NAMED_IAM \
+	  --parameter-overrides GitHubRepo=$(GITHUB_REPO) CreateOIDCProvider=$(CREATE_OIDC)
 
 teardown:           ## delete EVERYTHING (data included). Irreversible.
 	@test -n "$(BUCKET)" || (echo "stack $(STACK) not found in $(REGION)"; exit 1)

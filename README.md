@@ -111,7 +111,7 @@ aws ssm put-parameter --name /defect-dashboard/github-token --type SecureString 
 make deploy ALERT_EMAIL=you@example.com        # = make package + sam build + sam deploy
 
 # 3. (optional) CI/CD: GitHub OIDC roles, then set repo variables
-make bootstrap GITHUB_REPO=<owner>/<repo>
+make bootstrap GITHUB_REPO=<owner>/<repo>    # CREATE_OIDC=false if the GitHub OIDC provider already exists
 #    AWS_DEPLOY_ROLE_ARN, AWS_TRAIN_ROLE_ARN (stack outputs), AWS_REGION, DATA_URI=s3://<bucket>, ALERT_EMAIL
 
 # 4. Backfill faster than the 40-pages-per-15-min schedule (optional), then train once
@@ -165,8 +165,9 @@ Designed to round to **$0/month** on a free-tier account:
 - **Athena:** $5/TB scanned, with a 1 GB per-query cap enforced by the workgroup.
 - **CloudWatch:** 14-day log retention; 2 alarms (free tier: 10).
 - **Guardrails:** an AWS Budget (default $1) with email at 50% actual / 100% forecast, plus a
-  `EstimatedCharges` billing alarm in us-east-1. The billing alarm needs "Receive Billing
-  Alerts" enabled in account settings.
+  `EstimatedCharges` billing alarm. AWS only publishes billing metrics in us-east-1, so
+  that alarm is created only there; the default region is us-east-2, where the Budget is
+  the guardrail. The billing alarm also needs "Receive Billing Alerts" enabled.
 
 ```bash
 make teardown        # empties the bucket, deletes both stacks and the SSM parameter. Irreversible.

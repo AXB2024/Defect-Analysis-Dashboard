@@ -30,7 +30,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_TRAIN_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-2' }}
       - name: Train + evaluate + publish versioned artifacts to s3://.../models/
         run: python -m ml.train --store "${{ vars.DATA_URI }}" | tee train.log
       - name: Job summary
