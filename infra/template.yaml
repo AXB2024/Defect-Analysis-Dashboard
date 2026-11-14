@@ -1,0 +1,274 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Defect Analysis pipeline - EventBridge-scheduled Lambda ingests GitHub issues incrementally
+  into an S3 data lake (raw JSON -> partitioned Parquet), queryable via Glue + Athena.
+  Designed to stay inside the AWS free tier; see README "Cost" and `make teardown`.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: defect-dashboard
+    AllowedPattern: "[a-z0-9-]+"
+  Repos:
+    Type: String
+    Default: microsoft/vscode,react/react
+    Description: Comma-separated owner/name list to ingest.
+  RepoSlugs:
+    Type: String
+    Default: microsoft__vscode,react__react
+    Description: Same repos with "/" replaced by "__" (Athena partition-projection enum).
+  GitHubTokenParamName:
+    Type: String
+    Default: /defect-dashboard/github-token
+    Description: SSM SecureString holding a GitHub token (create it before deploying).
+  ScheduleExpression:
+    Type: String
+    Default: rate(15 minutes)
+  MaxPagesPerRun:
+    Type: Number
+    Default: 40
+  BackfillDays:
+    Type: Number
+    Default: 365
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: Email for pipeline-failure and budget alerts (leave empty to skip).
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 1
+  PandasLayerVersion:
+    Type: Number
+    Default: 1
+    Description: >
+      Version of the AWS-published AWSSDKPandas-Python312-Arm64 layer (pandas + pyarrow).
+      Bump to the latest listed at https://aws-sdk-pandas.readthedocs.io/en/stable/layers.html
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+  IsUsEast1: !Equals [!Ref "AWS::Region", us-east-1]
+  BillingAlarm: !And [!Condition HasAlertEmail, !Condition IsUsEast1]
+
+Resources:
+  # ------------------------------------------------------------------ storage
+  DataBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete # teardown empties then deletes (see Makefile)
+    Properties:
+      BucketName: !Sub ${ProjectName}-lake-${AWS::AccountId}-${AWS::Region}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      LifecycleConfiguration:
+        Rules:
+          - { Id: expire-raw, Status: Enabled, Prefix: raw/, ExpirationInDays: 180 }
+          - { Id: expire-quarantine, Status: Enabled, Prefix: quarantine/, ExpirationInDays: 90 }
+          - { Id: expire-athena-results, Status: Enabled, Prefix: athena-results/, ExpirationInDays: 7 }
+          - { Id: expire-run-logs, Status: Enabled, Prefix: logs/, ExpirationInDays: 90 }
+
+  # ------------------------------------------------------------------ ingestion
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-ingest
+      CodeUri: ../build/lambda/ # produced by `make package` (copies common/ ingestion/ transform/)
+      Handler: ingestion.handler.lambda_handler
+      Runtime: python3.12
+      Architectures: [arm64]
+      MemorySize: 512
+      Timeout: 300 # < 15-min schedule, so runs never overlap
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python312-Arm64:${PandasLayerVersion}
+      Environment:
+        Variables:
+          DATA_URI: !Sub s3://${DataBucket}
+          REPOS: !Ref Repos
+          GITHUB_TOKEN_PARAM: !Ref GitHubTokenParamName
+          MAX_PAGES_PER_RUN: !Ref MaxPagesPerRun
+          BACKFILL_DAYS: !Ref BackfillDays
+      LoggingConfig:
+        LogGroup: !Ref IngestLogGroup
+      Policies:
+        - S3CrudPolicy: { BucketName: !Ref DataBucket }
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${GitHubTokenParamName}
+      Events:
+        Every15Min:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ScheduleExpression
+            Name: !Sub ${ProjectName}-ingest-schedule
+            RetryPolicy: { MaximumRetryAttempts: 0 } # next scheduled run retries naturally
+
+  IngestLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-ingest
+      RetentionInDays: 14
+
+  # ------------------------------------------------------------------ catalog / SQL
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Join ["_", !Split ["-", !Sub "${ProjectName}_lake"]]
+
+  IssuesTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: issues
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: parquet
+          # Partition projection: no crawler, no MSCK REPAIR, no Glue cost.
+          projection.enabled: "true"
+          projection.repo.type: enum
+          projection.repo.values: !Ref RepoSlugs
+          projection.created_month.type: date
+          projection.created_month.format: yyyy-MM
+          projection.created_month.range: 2010-01,NOW
+          projection.created_month.interval: "1"
+          projection.created_month.interval.unit: MONTHS
+          storage.location.template: !Sub s3://${DataBucket}/processed/issues/repo=${!repo}/created_month=${!created_month}/
+        PartitionKeys:
+          - { Name: repo, Type: string }
+          - { Name: created_month, Type: string }
+        StorageDescriptor:
+          Location: !Sub s3://${DataBucket}/processed/issues/
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+          Columns:
+            - { Name: issue_id, Type: bigint }
+            - { Name: number, Type: bigint }
+            - { Name: title, Type: string }
+            - { Name: body, Type: string }
+            - { Name: state, Type: string }
+            - { Name: state_reason, Type: string }
+            - { Name: author_association, Type: string }
+            - { Name: user_login, Type: string }
+            - { Name: label_names, Type: array<string> }
+            - { Name: num_comments, Type: bigint }
+            - { Name: created_at, Type: timestamp }
+            - { Name: updated_at, Type: timestamp }
+            - { Name: closed_at, Type: timestamp }
+            - { Name: resolution_days, Type: double }
+            - { Name: category, Type: string }
+            - { Name: severity, Type: string }
+            - { Name: module, Type: string }
+            - { Name: first_ingested_at, Type: timestamp }
+            - { Name: last_ingested_at, Type: timestamp }
+
+  AthenaWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: !Sub ${ProjectName}
+      RecursiveDeleteOption: true
+      WorkGroupConfiguration:
+        EnforceWorkGroupConfiguration: true
+        BytesScannedCutoffPerQuery: 1073741824 # 1 GB hard cap per query (~$0.005)
+        ResultConfiguration:
+          OutputLocation: !Sub s3://${DataBucket}/athena-results/
+
+  # ------------------------------------------------------------------ dashboard access
+  DashboardReader:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub ${ProjectName}-dashboard-reader
+      Policies:
+        - PolicyName: read-lake
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt DataBucket.Arn
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - !Sub ${DataBucket.Arn}/processed/*
+                  - !Sub ${DataBucket.Arn}/models/*
+                  - !Sub ${DataBucket.Arn}/logs/*
+                  - !Sub ${DataBucket.Arn}/state/*
+
+  # ------------------------------------------------------------------ alerting + cost guardrails
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      Subscription:
+        - { Protocol: email, Endpoint: !Ref AlertEmail }
+
+  IngestErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmDescription: Ingestion Lambda failed (all repos) in 2 consecutive runs.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref IngestFunction }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertsTopic]
+
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Condition: HasAlertEmail
+    Properties:
+      Budget:
+        BudgetName: !Sub ${ProjectName}-monthly
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref MonthlyBudgetUsd, Unit: USD }
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 50 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+
+  # Billing metrics only exist in us-east-1 and need "Receive Billing Alerts" enabled.
+  BillingAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: BillingAlarm
+    Properties:
+      AlarmDescription: Estimated AWS charges exceeded the monthly budget.
+      Namespace: AWS/Billing
+      MetricName: EstimatedCharges
+      Dimensions: [{ Name: Currency, Value: USD }]
+      Statistic: Maximum
+      Period: 21600
+      EvaluationPeriods: 1
+      Threshold: !Ref MonthlyBudgetUsd
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions: [!Ref AlertsTopic]
+
+Outputs:
+  DataBucketName:
+    Value: !Ref DataBucket
+  DataUri:
+    Value: !Sub s3://${DataBucket}
+  IngestFunctionName:
+    Value: !Ref IngestFunction
+  GlueDatabaseName:
+    Value: !Ref GlueDatabase
+  AthenaWorkGroupName:
+    Value: !Ref AthenaWorkGroup
+  DashboardReaderUser:
+    Value: !Ref DashboardReader

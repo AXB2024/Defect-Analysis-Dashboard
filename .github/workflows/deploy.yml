@@ -1,0 +1,53 @@
+name: Deploy AWS stack
+
+# Runs on every merge to main, after the full CI suite passes.
+# Requires repository *variables* (Settings -> Secrets and variables -> Variables):
+#   AWS_DEPLOY_ROLE_ARN  output of `make bootstrap` (OIDC role; no long-lived keys)
+#   AWS_REGION           e.g. us-east-2
+#   ALERT_EMAIL          optional: pipeline-failure + budget alerts
+# If AWS_DEPLOY_ROLE_ARN is unset the deploy job is skipped (forks, first-time setup).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # OIDC
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    if: vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: aws-actions/setup-sam@v2
+        with: { use-installer: true }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-2' }}
+      - run: make build PY=python
+      - name: sam deploy
+        run: |
+          cd infra
+          sam deploy --stack-name defect-dashboard --region "${{ vars.AWS_REGION || 'us-east-2' }}" \
+            --no-confirm-changeset --no-fail-on-empty-changeset \
+            --parameter-overrides AlertEmail="${{ vars.ALERT_EMAIL }}"
+      - name: Smoke-invoke the ingestion Lambda once
+        run: |
+          aws lambda invoke --function-name defect-dashboard-ingest out.json --log-type None
+          cat out.json
+          ! grep -q '"errorMessage"' out.json

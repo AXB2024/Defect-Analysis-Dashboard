@@ -1,3 +1,5 @@
+# FROZEN SNAPSHOT of the original single-file app (commit 230222f), kept only as the
+# "before" baseline for benchmarks/cold_load.py. Do not import or modify.
 import pandas as pd
 import plotly.express as px
 import streamlit as st

@@ -1,0 +1,22 @@
+2026-11-14 13:22:42,626 INFO run 1 done, more pages pending - continuing
+2026-11-14 13:24:29,230 INFO run 2 done, more pages pending - continuing
+2026-11-14 13:26:12,873 INFO run 3 done, more pages pending - continuing
+            repo                since  conditional_request  not_modified  pages  has_more stopped_reason watermark_before  items_fetched  prs_skipped  issues  records_ingested quarantine_key  api_calls  duration_s      watermark_after
+microsoft/vscode 2025-11-14T19:20:29Z                False         False    100      True      max_pages             None          10000         2148    7852              7852           None        100     102.996 2026-01-03T23:28:10Z
+     react/react 2025-11-14T19:20:29Z                False         False     35     False           None             None           3444         2397    1047              1047           None         35      30.119 2026-11-14T17:56:37Z
+{"run_id": "20261114T192029Z-f18de4", "status": "success", "records_ingested": 8899, "duration_s": 133.153, "github": {"calls": 135, "not_modified": 0, "billable_calls": 135, "retries": 0, "rate_remaining": 4860}, "failures": []}
+            repo                since  conditional_request  not_modified  pages  has_more stopped_reason     watermark_before  items_fetched  prs_skipped  issues  records_ingested quarantine_key  api_calls  duration_s      watermark_after
+microsoft/vscode 2026-01-03T23:23:10Z                False         False    100      True      max_pages 2026-01-03T23:28:10Z          10000         1963    8037              8037           None        100     106.085 2026-04-30T10:20:16Z
+     react/react 2026-11-14T17:51:37Z                False         False      1     False           None 2026-11-14T17:56:37Z              1            1       0                 0           None          1       0.482 2026-11-14T17:56:37Z
+{"run_id": "20261114T192242Z-fe4813", "status": "success", "records_ingested": 8037, "duration_s": 106.599, "github": {"calls": 101, "not_modified": 0, "billable_calls": 101, "retries": 0, "rate_remaining": 4759}, "failures": []}
+            repo                since  conditional_request  not_modified  pages  has_more stopped_reason     watermark_before  items_fetched  prs_skipped  issues  records_ingested  quarantine_key  api_calls  duration_s      watermark_after
+microsoft/vscode 2026-04-30T10:15:16Z                False         False    100      True      max_pages 2026-04-30T10:20:16Z          10000         2908    7092              7092             NaN        100     103.286 2026-11-14T18:13:24Z
+     react/react 2026-11-14T17:51:37Z                 True          True      0     False           None 2026-11-14T17:56:37Z              0            0       0                 0             NaN          1       0.308 2026-11-14T17:56:37Z
+{"run_id": "20261114T192429Z-0f4e20", "status": "success", "records_ingested": 7092, "duration_s": 103.635, "github": {"calls": 101, "not_modified": 1, "billable_calls": 100, "retries": 0, "rate_remaining": 4659}, "failures": []}
+            repo                since  conditional_request  not_modified  pages  has_more stopped_reason     watermark_before  items_fetched  prs_skipped  issues  records_ingested  quarantine_key  api_calls  duration_s      watermark_after
+microsoft/vscode 2026-11-14T18:08:24Z                False         False      1     False           None 2026-11-14T18:13:24Z             54           12      42                42             NaN          1       1.257 2026-11-14T19:25:31Z
+     react/react 2026-11-14T17:51:37Z                 True          True      0     False           None 2026-11-14T17:56:37Z              0            0       0                 0             NaN          1       0.438 2026-11-14T17:56:37Z
+{"run_id": "20261114T192612Z-64e583", "status": "success", "records_ingested": 42, "duration_s": 1.695, "github": {"calls": 2, "not_modified": 1, "billable_calls": 1, "retries": 0, "rate_remaining": 4658}, "failures": []}
+real 346.19
+user 18.03
+sys 2.49

@@ -1,0 +1,32 @@
+{
+  "runs": 2,
+  "first_run": "2026-11-14T19:30:07.493404+00:00",
+  "last_run": "2026-11-14T19:45:07.484995+00:00",
+  "statuses": {
+    "success": 2
+  },
+  "api_calls_per_run": {
+    "mean": 2,
+    "min": 2,
+    "max": 2
+  },
+  "billable_calls_per_run": {
+    "mean": 1,
+    "min": 1,
+    "max": 1
+  },
+  "not_modified_total": 2,
+  "repo_polls_answered_304": "2/4",
+  "records_ingested_total": 28,
+  "run_duration_s": {
+    "median": 1.399,
+    "max": 1.47
+  },
+  "latency_created_to_queryable_s": {
+    "n_new_issues": 1,
+    "p50": 591.5,
+    "p95": 591.5,
+    "max": 591.5,
+    "mean": 591.5
+  }
+}
