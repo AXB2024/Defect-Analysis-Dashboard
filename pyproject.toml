@@ -22,8 +22,8 @@ addopts = "-q"
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
-source = ["common", "ingestion", "transform", "ml"]
-omit = ["*/run.py", "ml/train.py"]
+source = ["common", "ingestion", "transform", "ml", "app"]
+omit = ["*/run.py"]  # thin argparse CLIs
 
 [tool.coverage.report]
 show_missing = true
