@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  One-time bootstrap for GitHub Actions -> AWS via OIDC (no long-lived keys in GitHub).
+  Deploy once by hand:  make bootstrap GITHUB_REPO=<owner>/<repo>
+
+Parameters:
+  GitHubRepo:
+    Type: String
+    Description: owner/name of the GitHub repository allowed to assume these roles.
+  ProjectName:
+    Type: String
+    Default: defect-dashboard
+  CreateOIDCProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Set false if token.actions.githubusercontent.com already exists in this account.
+
+Conditions:
+  MakeProvider: !Equals [!Ref CreateOIDCProvider, "true"]
+
+Resources:
+  GitHubOIDC:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  # Assumable only from workflows on main (deploy + scheduled training).
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-gha-deploy
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepo}:ref:refs/heads/main
+      Policies:
+        - PolicyName: sam-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [cloudformation:*]
+                Resource:
+                  - !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}*/*
+                  - !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*
+                  - !Sub arn:aws:cloudformation:${AWS::Region}:aws:transform/Serverless-2016-10-31
+              - Effect: Allow
+                Action: [cloudformation:ValidateTemplate, cloudformation:GetTemplateSummary]
+                Resource: "*"
+              - Effect: Allow
+                Action: [s3:*]
+                Resource:
+                  - !Sub arn:aws:s3:::${ProjectName}-lake-${AWS::AccountId}-${AWS::Region}
+                  - !Sub arn:aws:s3:::${ProjectName}-lake-${AWS::AccountId}-${AWS::Region}/*
+                  - arn:aws:s3:::aws-sam-cli-managed-default-*
+                  - arn:aws:s3:::aws-sam-cli-managed-default-*/*
+              - Effect: Allow
+                Action: [lambda:*]
+                Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-*
+              - Effect: Allow
+                Action: [lambda:GetLayerVersion]
+                Resource: "*"
+              - Effect: Allow
+                Action: [events:*]
+                Resource: !Sub arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-*
+              - Effect: Allow
+                Action: [logs:*]
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*
+              - Effect: Allow
+                Action: [glue:*]
+                Resource:
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*
+              - Effect: Allow
+                Action: [athena:*]
+                Resource: !Sub arn:aws:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${ProjectName}
+              - Effect: Allow
+                Action: [iam:*]
+                Resource:
+                  - !Sub arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-*
+                  - !Sub arn:aws:iam::${AWS::AccountId}:user/${ProjectName}-*
+              - Effect: Allow
+                Action: [sns:*, cloudwatch:*, budgets:*]
+                Resource: "*"
+
+  # Least privilege for the scheduled training workflow: read lake, write models/.
+  TrainRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-gha-train
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepo}:ref:refs/heads/main
+      Policies:
+        - PolicyName: train
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub arn:aws:s3:::${ProjectName}-lake-${AWS::AccountId}-${AWS::Region}
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub arn:aws:s3:::${ProjectName}-lake-${AWS::AccountId}-${AWS::Region}/*
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub arn:aws:s3:::${ProjectName}-lake-${AWS::AccountId}-${AWS::Region}/models/*
+
+Outputs:
+  DeployRoleArn:
+    Value: !GetAtt DeployRole.Arn
+  TrainRoleArn:
+    Value: !GetAtt TrainRole.Arn
