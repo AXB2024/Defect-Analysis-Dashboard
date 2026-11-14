@@ -156,3 +156,18 @@ def test_summarise_flattens_run():
     run = {"repos": {"o/r": {"pages": 1, "quality": {"x": 1}}}}
     df = handler.summarise(run)
     assert df.columns.tolist() == ["repo", "pages"]
+
+
+def test_latency_ignores_issues_refetched_by_lookback(local_store):
+    # Issue 2 is created after run 1 *started* but run 1 already fetched it; run 2's
+    # 5-minute lookback re-fetches it. It must not be counted as a new arrival in run 2.
+    early = make_raw_issue(2, NOW + timedelta(seconds=1))
+    with responses.RequestsMock() as rsps:
+        github_mock(rsps, [[make_raw_issue(1, T0)], [make_raw_issue(1, T0), early]], etag='"y"')
+        handler.run_ingestion(local_store, client(), repos=["o/r"], now=NOW - timedelta(minutes=15))
+        r1 = handler.run_ingestion(local_store, client(), repos=["o/r"], now=NOW)
+        assert r1["repos"]["o/r"]["latency"]["new_issues"] == 1
+    with responses.RequestsMock() as rsps:
+        github_mock(rsps, [[early]], etag='"z"')
+        r2 = handler.run_ingestion(local_store, client(), repos=["o/r"], now=NOW + timedelta(minutes=15))
+    assert r2["repos"]["o/r"]["latency"] == {}

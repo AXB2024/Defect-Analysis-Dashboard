@@ -49,22 +49,26 @@ def read_partition(store: Store, key: str) -> pd.DataFrame | None:
     return conform(df)
 
 
-def upsert(store: Store, df: pd.DataFrame) -> dict:
-    """Merge `df` into the processed zone. Returns per-run write statistics."""
+def upsert(store: Store, df: pd.DataFrame, inserted_ids: set | None = None) -> dict:
+    """Merge `df` into the processed zone. Returns per-run write statistics.
+    If `inserted_ids` is given, the issue_ids that were new to the lake are added to it."""
     stats = {"partitions_written": 0, "rows_inserted": 0, "rows_updated": 0, "rows_unchanged": 0}
     if df.empty:
         return stats
+    inserted_ids = inserted_ids if inserted_ids is not None else set()
     for (repo, month), batch in df.groupby(["repo", "created_month"], sort=True):
         key = partition_key(repo, month)
         existing = read_partition(store, key)
         if existing is None or existing.empty:
             merged = dedupe_latest(batch)
             stats["rows_inserted"] += len(merged)
+            inserted_ids.update(merged["issue_id"].tolist())
         else:
             known = existing.set_index("issue_id")["updated_at"]
             incoming = dedupe_latest(batch)
             prev = incoming["issue_id"].map(known)
             stats["rows_inserted"] += int(prev.isna().sum())
+            inserted_ids.update(incoming.loc[prev.isna(), "issue_id"].tolist())
             stats["rows_updated"] += int((prev.notna() & (incoming["updated_at"] > prev)).sum())
             stats["rows_unchanged"] += int((prev.notna() & (incoming["updated_at"] <= prev)).sum())
             merged = dedupe_latest(pd.concat([existing, incoming], ignore_index=True))

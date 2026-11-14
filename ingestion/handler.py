@@ -90,15 +90,18 @@ def ingest_repo(
     df = clean_issues(items, repo, now)
     report = run_checks(df)
     quarantine_key = write_quarantine(store, report.bad, f"{run_id}-{slug}", now)
-    write_stats = upsert(store, report.good)
+    new_ids: set = set()
+    write_stats = upsert(store, report.good, inserted_ids=new_ids)
     visible_at = datetime.now(UTC)
 
-    # Ingestion latency: issues *created after the previous successful run* can only have
-    # been picked up by this run, so (visible_at - created_at) is their end-to-end lag.
+    # Ingestion latency: for issues first written by THIS run and created after the previous
+    # successful run started, (visible_at - created_at) is their end-to-end lag. Both conditions
+    # matter: the 5-min lookback re-fetches issues an earlier run already ingested.
     latency = {}
     if state.caught_up and state.last_success_at and not report.good.empty:
         prev = to_utc(state.last_success_at)
-        fresh = report.good[report.good["created_at"] > prev]
+        good = report.good
+        fresh = good[(good["created_at"] > prev) & good["issue_id"].isin(new_ids)]
         if not fresh.empty:
             lag = (to_utc(visible_at) - fresh["created_at"]).dt.total_seconds()
             latency = {
@@ -106,6 +109,7 @@ def ingest_repo(
                 "p50_s": round(float(lag.median()), 1),
                 "p95_s": round(float(lag.quantile(0.95)), 1),
                 "max_s": round(float(lag.max()), 1),
+                "lags_s": [round(float(x), 1) for x in lag],
             }
 
     # 2. advance state only after processed/ is durable
