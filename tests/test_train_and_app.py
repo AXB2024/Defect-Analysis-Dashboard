@@ -57,9 +57,11 @@ def test_artifacts_versioned_and_loadable(trained_lake):
     } <= set(store.list_keys("models/"))
     models, metrics = load_latest(store)
     assert metrics["version"] == m["version"]
-    scored = score(models, read_processed(store).head(25))
+    scored = score(models, read_processed(store))
     assert {"predicted_days", "predicted_bucket", "bucket_confidence", "predicted_category"} <= set(scored.columns)
-    assert (scored["predicted_days"] >= 0).all()
+    open_rows = scored["state"] == "open"
+    assert open_rows.any() and (scored.loc[open_rows, "predicted_days"] >= 0).all()
+    assert scored.loc[~open_rows, "predicted_bucket"].isna().all()
 
 
 def test_load_latest_none_when_untrained(local_store):
@@ -84,3 +86,37 @@ def test_dashboard_empty_lake_shows_warning(tmp_path, monkeypatch):
     at = AppTest.from_file("app/streamlit_app.py", default_timeout=60).run()
     assert not at.exception
     assert at.warning and "No processed data" in at.warning[0].value
+
+
+def test_batch_predictions_written_and_delta_scored(trained_lake):
+    from ml.predict import attach_predictions, load_predictions
+
+    store, m = trained_lake
+    batch = load_predictions(store, f"models/v={m['version']}")
+    issues = read_processed(store, columns=[c for c in read_processed(store).columns if c != "body"])
+    assert len(batch) == len(issues) and m["batch_scoring"]["rows"] == len(issues)
+    models, _ = load_latest(store)
+
+    fetched = []
+
+    def fetch_full(rows):
+        fetched.append(len(rows))
+        full = read_processed(store)
+        return full.merge(rows[["repo", "issue_id"]], on=["repo", "issue_id"])
+
+    # Pretend 3 issues arrived after the batch run: only they are scored on the fly.
+    out = attach_predictions(models, issues, batch.iloc[3:], fetch_full)
+    assert fetched == [3]
+    assert len(out) == len(issues) and out["predicted_category"].notna().all()
+    # No batch at all -> everything is scored.
+    out2 = attach_predictions(models, issues.head(10), None, fetch_full)
+    assert fetched[-1] == 10 and out2["predicted_category"].notna().all()
+
+
+def test_read_processed_projection_and_partition_filter(trained_lake):
+    store, _ = trained_lake
+    light = read_processed(store, columns=["repo", "issue_id", "created_month"])
+    assert light["body"].isna().all() and light["issue_id"].notna().all()
+    month = light["created_month"].iloc[0]
+    one = read_processed(store, partitions={("o/r", month)})
+    assert set(one["created_month"]) == {month} and one["body"].notna().any()

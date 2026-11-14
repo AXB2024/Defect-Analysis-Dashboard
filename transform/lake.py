@@ -40,12 +40,13 @@ def to_parquet_bytes(df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
-def read_partition(store: Store, key: str) -> pd.DataFrame | None:
+def read_partition(store: Store, key: str, columns: list[str] | None = None) -> pd.DataFrame | None:
     raw = store.get_bytes(key)
     if raw is None:
         return None
-    df = pd.read_parquet(io.BytesIO(raw))
-    df["label_names"] = df["label_names"].apply(lambda x: list(x) if x is not None else [])
+    df = pd.read_parquet(io.BytesIO(raw), columns=columns)
+    if "label_names" in df.columns:
+        df["label_names"] = df["label_names"].apply(lambda x: list(x) if x is not None else [])
     return conform(df)
 
 
@@ -85,10 +86,17 @@ def write_quarantine(store: Store, bad: pd.DataFrame, run_id: str, now: datetime
     return key
 
 
-def read_processed(store: Store) -> pd.DataFrame:
-    """Read the full processed zone (used by the trainer and the dashboard)."""
+def read_processed(
+    store: Store, columns: list[str] | None = None, partitions: set[tuple[str, str]] | None = None
+) -> pd.DataFrame:
+    """Read the processed zone (trainer + dashboard). `columns` projects (e.g. skip the large
+    `body` column); `partitions` limits the read to {(repo, created_month)}. Columns not read
+    come back as nulls so the schema stays stable."""
     keys = [k for k in store.list_keys(PROCESSED_PREFIX + "/") if k.endswith(".parquet")]
-    frames = [read_partition(store, k) for k in keys]
+    if partitions is not None:
+        wanted = {partition_key(r, m) for r, m in partitions}
+        keys = [k for k in keys if k in wanted]
+    frames = [read_partition(store, k, columns) for k in keys]
     frames = [f for f in frames if f is not None and not f.empty]
     if not frames:
         from transform.clean import empty_frame

@@ -9,10 +9,12 @@ import streamlit as st
 
 from common.runlog import latest_run, read_run_logs
 from common.storage import Store, open_store
-from ml.predict import load_latest, score
+from ml.predict import attach_predictions, load_latest, load_predictions
+from transform.clean import SCHEMA
 from transform.lake import read_processed
 
 DATA_TTL_S = 300  # dashboard re-reads the lake at most every 5 min (ingest runs every 15)
+LIGHT_COLUMNS = [c for c in SCHEMA if c != "body"]  # body is ~all the bytes and no view shows it
 
 
 def _configure_from_secrets() -> None:
@@ -39,7 +41,7 @@ def get_store(uri: str) -> Store:
 
 @st.cache_data(ttl=DATA_TTL_S, show_spinner="Reading processed Parquet...")
 def load_issues(uri: str) -> pd.DataFrame:
-    return read_processed(get_store(uri))
+    return read_processed(get_store(uri), columns=LIGHT_COLUMNS)
 
 
 @st.cache_resource(ttl=DATA_TTL_S, show_spinner="Loading models...")
@@ -53,8 +55,17 @@ def load_scored(uri: str, model_version: str | None) -> pd.DataFrame:  # version
     loaded = load_models(uri)
     if loaded is None or df.empty:
         return df
-    models, _ = loaded
-    return score(models, df)
+    models, metrics = loaded
+    store = get_store(uri)
+    batch = load_predictions(store, f"models/v={metrics['version']}") if metrics.get("version") else None
+
+    def fetch_full(rows: pd.DataFrame) -> pd.DataFrame:
+        # Only the partitions holding not-yet-scored issues are read with their body text.
+        parts = set(zip(rows["repo"], rows["created_month"], strict=True))
+        full = read_processed(store, partitions=parts)
+        return full.merge(rows[["repo", "issue_id"]], on=["repo", "issue_id"])
+
+    return attach_predictions(models, df, batch, fetch_full)
 
 
 @st.cache_data(ttl=60)

@@ -54,6 +54,7 @@ from ml.labels import (
     regression_target,
 )
 from ml.models import LogTargetRegressor, SafeSVD
+from ml.predict import predictions_frame
 from transform.labels import OTHER
 from transform.lake import read_processed
 
@@ -270,9 +271,10 @@ def _dump(obj) -> bytes:
 
 def train_all(store: Store, window_days: int = 365, as_of: pd.Timestamp | None = None) -> dict:
     t0 = time.perf_counter()
-    df = read_processed(store)
-    if df.empty:
+    full = read_processed(store)
+    if full.empty:
         raise ValueError(f"no processed data in {store.uri}")
+    df = full
     as_of = as_of or df["last_ingested_at"].max()  # the lake's snapshot time
     # Issues created before the backfill window only exist in the lake if they were
     # updated recently - a biased sample - so the population is bounded to the window.
@@ -308,6 +310,12 @@ def train_all(store: Store, window_days: int = 365, as_of: pd.Timestamp | None =
     store.put_bytes(f"{prefix}/regressor.joblib", _dump(reg))
     store.put_bytes(f"{prefix}/bucket_clf.joblib", _dump(bkt))
     store.put_bytes(f"{prefix}/category_clf.joblib", _dump(cat))
+    store.put_json(f"{prefix}/metrics.json", metrics)
+    # Batch inference over the whole lake so the dashboard doesn't re-score 20k+ issues per load.
+    t_pred = time.perf_counter()
+    preds = predictions_frame({"regressor": reg, "bucket_clf": bkt, "category_clf": cat}, full, version)
+    store.put_parquet(f"{prefix}/predictions.parquet", preds)
+    metrics["batch_scoring"] = {"rows": len(preds), "duration_s": round(time.perf_counter() - t_pred, 2)}
     store.put_json(f"{prefix}/metrics.json", metrics)
     store.put_json(LATEST_KEY, {"version": version, "prefix": prefix, "trained_at": metrics["trained_at"]})
     return metrics
