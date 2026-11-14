@@ -172,6 +172,21 @@ Designed to round to **$0/month** on a free-tier account:
 make teardown        # empties the bucket, deletes both stacks and the SSM parameter. Irreversible.
 ```
 
+## Results summary
+
+Measured locally on 2026-11-14 (the AWS stack itself hasn't been deployed yet). Full
+tables, commands and caveats are in [RESULTS.md](RESULTS.md).
+
+| area | result |
+|---|---|
+| Backfill | 24,055 issues in 346.19 s, 339 API calls, 0 rows quarantined |
+| ETag | authenticated 304 responses cost 0 rate-limit units (verified against the live API) |
+| Dashboard cold load | 13.76 s → **4.81 s** median (2.86×); GitHub calls per load 15 → **0** |
+| Bucket classifier (time-split test) | macro-F1 **0.402** vs 0.130 majority baseline; accuracy 0.480 vs 0.353 |
+| Category classifier | macro-F1 **0.540** vs 0.160 majority baseline |
+| Resolution-time regressor | MAE 33.03 vs 35.24 median baseline: **only 6.29% better** (weak; see next steps) |
+| Tests | 99 passed, 95.90% line coverage |
+
 ## Known limitations
 
 - The models are modest. Resolution time is driven by triage decisions that the text at

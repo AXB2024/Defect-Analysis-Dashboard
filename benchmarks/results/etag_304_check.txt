@@ -1,0 +1,4 @@
+core 'used' before: 508
+after 200 request:  509  (status 200, delta 1)
+after conditional:  509  (status 304, delta 0)
+after conditional:  509  (status 304, delta 0)

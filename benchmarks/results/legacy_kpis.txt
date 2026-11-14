@@ -1,0 +1,2 @@
+# Legacy app KPIs from one headless AppTest run (2026-11-14, after the cold-load benchmark)
+[('Total Defects', '78'), ('Avg. Resolution Time (days)', '0.42'), ('Critical Defects', '24'), ('Predicted Resolution', '0.42')]

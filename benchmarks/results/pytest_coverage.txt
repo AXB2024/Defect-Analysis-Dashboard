@@ -1,0 +1,32 @@
+........................................................................ [ 72%]
+...........................                                              [100%]
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.12.15-final-0 _______________
+
+Name                         Stmts   Miss  Cover   Missing
+----------------------------------------------------------
+app/data.py                     51      6    88%   26-28, 64-66
+app/streamlit_app.py            33      3    91%   30-32
+app/views.py                   134     11    92%   104-105, 115-116, 139-140, 204, 206, 210, 222-223
+common/config.py                20      1    95%   22
+common/runlog.py                18      0   100%
+common/storage.py              118      3    97%   148, 177-178
+ingestion/github_client.py     104      4    96%   118, 173-174, 176
+ingestion/handler.py           109      1    99%   182
+ingestion/state.py              19      0   100%
+ml/evaluate.py                  24      0   100%
+ml/features.py                  47      0   100%
+ml/labels.py                    33      1    97%   27
+ml/models.py                    15      0   100%
+ml/predict.py                   62      2    97%   40, 78
+ml/train.py                    159     17    89%   126, 259, 262-263, 276, 325-335, 339
+transform/clean.py              61      0   100%
+transform/labels.py             33      0   100%
+transform/lake.py               70      0   100%
+transform/quality.py            86      0   100%
+----------------------------------------------------------
+TOTAL                         1196     49    96%
+
+5 empty files skipped.
+Required test coverage of 85% reached. Total coverage: 95.90%
+99 passed in 15.24s

@@ -1,0 +1,105 @@
+{
+  "data_uri": "data",
+  "trials": 5,
+  "runs": {
+    "legacy": [
+      {
+        "app": "legacy",
+        "cold_s": 13.741117374971509,
+        "cold_incl_streamlit_import_s": 14.06934558309149,
+        "warm_rerun_s": 0.09267208399251103,
+        "github_calls_cold": 15,
+        "github_calls_warm": 0
+      },
+      {
+        "app": "legacy",
+        "cold_s": 13.691231333999895,
+        "cold_incl_streamlit_import_s": 14.033101750072092,
+        "warm_rerun_s": 0.09371270798146725,
+        "github_calls_cold": 15,
+        "github_calls_warm": 0
+      },
+      {
+        "app": "legacy",
+        "cold_s": 13.755881333025172,
+        "cold_incl_streamlit_import_s": 14.077116959146224,
+        "warm_rerun_s": 0.09259166591800749,
+        "github_calls_cold": 15,
+        "github_calls_warm": 0
+      },
+      {
+        "app": "legacy",
+        "cold_s": 14.202174542006105,
+        "cold_incl_streamlit_import_s": 14.541680750087835,
+        "warm_rerun_s": 0.09208504192065448,
+        "github_calls_cold": 15,
+        "github_calls_warm": 0
+      },
+      {
+        "app": "legacy",
+        "cold_s": 14.055394625058398,
+        "cold_incl_streamlit_import_s": 14.45197862398345,
+        "warm_rerun_s": 0.10142733401153237,
+        "github_calls_cold": 15,
+        "github_calls_warm": 0
+      }
+    ],
+    "new": [
+      {
+        "app": "new",
+        "cold_s": 5.662893416942097,
+        "cold_incl_streamlit_import_s": 5.989786750054918,
+        "warm_rerun_s": 0.4151082499884069,
+        "github_calls_cold": 0,
+        "github_calls_warm": 0
+      },
+      {
+        "app": "new",
+        "cold_s": 5.1408848750870675,
+        "cold_incl_streamlit_import_s": 5.50181112496648,
+        "warm_rerun_s": 0.35658316605258733,
+        "github_calls_cold": 0,
+        "github_calls_warm": 0
+      },
+      {
+        "app": "new",
+        "cold_s": 4.619576750090346,
+        "cold_incl_streamlit_import_s": 4.936230667051859,
+        "warm_rerun_s": 0.36659824999514967,
+        "github_calls_cold": 0,
+        "github_calls_warm": 0
+      },
+      {
+        "app": "new",
+        "cold_s": 4.805785667034797,
+        "cold_incl_streamlit_import_s": 5.077828709036112,
+        "warm_rerun_s": 0.35605283302720636,
+        "github_calls_cold": 0,
+        "github_calls_warm": 0
+      },
+      {
+        "app": "new",
+        "cold_s": 4.632004082901403,
+        "cold_incl_streamlit_import_s": 4.906427332898602,
+        "warm_rerun_s": 0.35793254210148007,
+        "github_calls_cold": 0,
+        "github_calls_warm": 0
+      }
+    ]
+  },
+  "legacy": {
+    "cold_median_s": 13.755881333025172,
+    "cold_min_s": 13.691231333999895,
+    "cold_max_s": 14.202174542006105,
+    "warm_median_s": 0.09267208399251103,
+    "github_calls_per_cold_load": 15
+  },
+  "new": {
+    "cold_median_s": 4.805785667034797,
+    "cold_min_s": 4.619576750090346,
+    "cold_max_s": 5.662893416942097,
+    "warm_median_s": 0.35793254210148007,
+    "github_calls_per_cold_load": 0
+  },
+  "speedup_cold_median_x": 2.8623584749905513
+}
