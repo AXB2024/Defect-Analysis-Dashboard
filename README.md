@@ -70,7 +70,7 @@ For issues that don’t fit known categories, we apply **K-Means clustering** to
 | **Data** | Pandas, GitHub Issues API |
 | **Visualization** | Plotly |
 | **ML Models** | Random Forest, Logistic Regression |
-| **NLP** | TF-IDF, Sentence Transformers (BERT-based) |
+| **NLP** | TF-IDF |
 
 ---
 
