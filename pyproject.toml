@@ -1,0 +1,30 @@
+[project]
+name = "defect-analysis-dashboard"
+version = "2.0.0"
+description = "Near-real-time GitHub defect analytics: AWS data lake + ML + Streamlit"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+include = ["common*", "ingestion*", "transform*", "ml*", "app*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["build", "infra/.aws-sam", "benchmarks/legacy_app.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["E501", "SIM905"]  # SIM905: keyword lists read better as split strings
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["common", "ingestion", "transform", "ml"]
+omit = ["*/run.py", "ml/train.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
