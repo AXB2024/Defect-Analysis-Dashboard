@@ -2,15 +2,13 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main]
-  workflow_call: # reused by deploy.yml as a gate
+  workflow_call: # deploy.yml runs this suite on every push to main before deploying
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
