@@ -4,3 +4,4 @@ pytest-cov==7.1.0
 moto[s3,ssm]==5.2.5
 responses==0.26.3
 ruff==0.17.5
+botocore[crt]==1.44.3  # needed for `aws login` session credentials locally
