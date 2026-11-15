@@ -27,7 +27,8 @@ Resources:
       Url: https://token.actions.githubusercontent.com
       ClientIdList: [sts.amazonaws.com]
 
-  # Assumable only from workflows on main (deploy + scheduled training).
+  # Assumable only from main. deploy.yml runs in the `production` environment, and GitHub
+  # then sets the OIDC subject to repo:<repo>:environment:production instead of the ref.
   DeployRole:
     Type: AWS::IAM::Role
     Properties:
@@ -42,7 +43,9 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepo}:ref:refs/heads/main
+                token.actions.githubusercontent.com:sub:
+                  - !Sub repo:${GitHubRepo}:ref:refs/heads/main
+                  - !Sub repo:${GitHubRepo}:environment:production
       Policies:
         - PolicyName: sam-deploy
           PolicyDocument:
