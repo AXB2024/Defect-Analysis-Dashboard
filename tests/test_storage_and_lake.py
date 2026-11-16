@@ -110,3 +110,32 @@ def test_quarantine_written_only_when_needed(store):
     key = write_quarantine(store, bad, "run1", NOW)
     assert key == "quarantine/issues/date=2026-03-01/run1.json"
     assert store.get_json(key)[0]["dq_reasons"] == "x;"
+
+
+def test_upsert_merges_microsecond_partition_with_nanosecond_batch(local_store):
+    """Regression: Lambda (pandas 2.1.4) failed with 'Can only use .dt accessor with
+    datetimelike values' merging us-resolution Parquet with ns-resolution new rows."""
+    upsert(local_store, _batch([make_raw_issue(1, T0)]))
+    existing = read_partition(local_store, partition_key("o/r", "2026-01"))
+    assert str(existing["created_at"].dtype) == "datetime64[ns, UTC]"  # normalised on read
+
+    later = NOW + timedelta(hours=1)
+    stats = upsert(local_store, _batch([make_raw_issue(1, T0, updated=T0 + timedelta(days=1), title="v2")], at=later))
+    assert stats["rows_updated"] == 1
+    out = read_processed(local_store)
+    assert out.loc[0, "title"] == "v2"
+    assert all(str(out[c].dtype) == "datetime64[ns, UTC]" for c in ("created_at", "updated_at", "first_ingested_at"))
+
+
+def test_to_parquet_bytes_tolerates_object_dtype_timestamps():
+    import io
+
+    from transform.lake import to_parquet_bytes
+
+    df = _batch([make_raw_issue(1, T0), make_raw_issue(2, T0 + timedelta(days=1))])
+    # What pandas < 2.2 produces when concatenating mixed-resolution tz-aware columns:
+    df["created_at"] = pd.Series(list(df["created_at"]), dtype="object")
+    assert df["created_at"].dtype == object
+    back = pq.read_table(io.BytesIO(to_parquet_bytes(df)))
+    assert str(back.schema.field("created_at").type) == "timestamp[us, tz=UTC]"
+    assert back.column("created_at").null_count == 0

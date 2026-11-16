@@ -4,6 +4,8 @@ STACK     ?= defect-dashboard
 REGION    ?= us-east-2
 # Set CREATE_OIDC=false when the GitHub OIDC provider already exists (e.g. created by an org admin).
 CREATE_OIDC ?= true
+# Passed explicitly: on stack updates `sam deploy` otherwise reuses the old parameter value.
+PANDAS_LAYER ?= 22
 DATA_URI  ?= data
 SAM       ?= sam
 BUCKET     = $(shell aws cloudformation describe-stacks --stack-name $(STACK) --region $(REGION) \
@@ -39,7 +41,7 @@ build: package
 
 deploy: build       ## make deploy ALERT_EMAIL=you@example.com
 	cd infra && $(SAM) deploy --stack-name $(STACK) --region $(REGION) \
-	  --parameter-overrides AlertEmail=$(ALERT_EMAIL)
+	  --parameter-overrides AlertEmail=$(ALERT_EMAIL) PandasLayerVersion=$(PANDAS_LAYER)
 
 bootstrap:          ## one-time: GitHub OIDC roles.  make bootstrap GITHUB_REPO=owner/repo [CREATE_OIDC=false]
 	aws cloudformation deploy --template-file infra/bootstrap.yaml --stack-name $(STACK)-bootstrap \

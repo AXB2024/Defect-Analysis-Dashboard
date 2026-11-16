@@ -31,7 +31,8 @@ def to_parquet_bytes(df: pd.DataFrame) -> bytes:
     """Parquet with microsecond UTC timestamps (Athena/Glue can't read ns timestamps)."""
     df = df.copy()
     for c in TS_COLS:
-        df[c] = df[c].dt.tz_convert("UTC").astype("datetime64[us, UTC]")
+        # to_datetime first: never assume the column survived earlier merges as datetimes.
+        df[c] = pd.to_datetime(df[c], utc=True, errors="coerce").astype("datetime64[us, UTC]")
     for c in ("issue_id", "number", "num_comments"):
         df[c] = df[c].astype("Int64")
     table = pa.Table.from_pandas(df[list(SCHEMA)], preserve_index=False)

@@ -171,3 +171,26 @@ def test_latency_ignores_issues_refetched_by_lookback(local_store):
         github_mock(rsps, [[early]], etag='"z"')
         r2 = handler.run_ingestion(local_store, client(), repos=["o/r"], now=NOW + timedelta(minutes=15))
     assert r2["repos"]["o/r"]["latency"] == {}
+
+
+def test_emf_metrics_reports_failed_repos():
+    import json
+
+    line = json.loads(handler.emf_metrics({"failures": [{"repo": "a/b", "error": "x"}], "records_ingested": 7}, "fn"))
+    spec = line["_aws"]["CloudWatchMetrics"][0]
+    assert spec["Namespace"] == "DefectDashboard" and spec["Dimensions"] == [["FunctionName"]]
+    assert {m["Name"] for m in spec["Metrics"]} == {"FailedRepos", "RecordsIngested"}
+    assert line["FailedRepos"] == 1 and line["RecordsIngested"] == 7 and line["FunctionName"] == "fn"
+
+
+def test_lambda_handler_emits_metric_on_partial_failure(s3_store, env, capsys):
+    import json
+
+    env(DATA_URI=f"s3://{BUCKET}", REPOS="o/r,bad/repo", GITHUB_TOKEN="t")
+    with responses.RequestsMock() as rsps:
+        github_mock(rsps, [[make_raw_issue(1, T0)]])
+        rsps.get("https://api.github.com/repos/bad/repo/issues", status=500)
+        out = handler.lambda_handler({}, None)  # partial: no exception...
+    assert out["status"] == "partial"
+    emf = [json.loads(x) for x in capsys.readouterr().out.splitlines() if '"_aws"' in x]
+    assert emf and emf[-1]["FailedRepos"] == 1  # ...but the metric still lets the alarm fire

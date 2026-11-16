@@ -40,10 +40,12 @@ Parameters:
     Default: 1
   PandasLayerVersion:
     Type: Number
-    Default: 1
+    Default: 22
     Description: >
-      Version of the AWS-published AWSSDKPandas-Python312-Arm64 layer (pandas + pyarrow).
-      Bump to the latest listed at https://aws-sdk-pandas.readthedocs.io/en/stable/layers.html
+      Version of the AWS-published AWSSDKPandas-Python312-Arm64 layer. v22 = AWS SDK for pandas
+      3.15.1 with pandas 2.3.3 / pyarrow 20.0.0 / numpy 2.4.2, matching requirements.txt.
+      Keep Lambda and local pandas on the same major/minor: v1 (pandas 2.1.4) broke upserts of
+      partitions written locally; v23+ ship pandas 3.x.
 
 Conditions:
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
@@ -83,6 +85,8 @@ Resources:
       Architectures: [arm64]
       MemorySize: 512
       Timeout: 300 # < 15-min schedule, so runs never overlap
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0 # the next scheduled run retries; async retries just tripled failures
       Layers:
         - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python312-Arm64:${PandasLayerVersion}
       Environment:
@@ -211,6 +215,24 @@ Resources:
     Properties:
       Subscription:
         - { Protocol: email, Endpoint: !Ref AlertEmail }
+
+  # One repo failing marks the run "partial" (no Lambda error), so it needs its own alarm.
+  # The handler logs FailedRepos as a CloudWatch Embedded Metric (no API calls, no extra deps).
+  IngestPartialFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmDescription: At least one repo failed to ingest in 2 consecutive 15-minute periods.
+      Namespace: DefectDashboard
+      MetricName: FailedRepos
+      Dimensions: [{ Name: FunctionName, Value: !Sub "${ProjectName}-ingest" }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertsTopic]
 
   IngestErrorsAlarm:
     Type: AWS::CloudWatch::Alarm

@@ -96,13 +96,24 @@ def enrich(df: pd.DataFrame) -> pd.DataFrame:
     return conform(df)
 
 
+def to_utc_ns(s: pd.Series) -> pd.Series:
+    """Coerce to tz-aware UTC at one fixed resolution (ns).
+
+    Parquet written by this project stores microseconds (for Athena), while freshly
+    parsed timestamps are nanoseconds. pandas < 2.2 silently turns a concat of mixed
+    resolutions into an object column, which broke the Lambda's upsert (pandas 2.1.4).
+    Normalising every frame on the way in makes merges resolution-safe on any pandas.
+    """
+    return pd.to_datetime(s, utc=True, errors="coerce").astype("datetime64[ns, UTC]")
+
+
 def conform(df: pd.DataFrame) -> pd.DataFrame:
     """Return df with exactly SCHEMA's columns, order and dtypes."""
     out = pd.DataFrame(index=df.index)
     for col, dtype in SCHEMA.items():
         s = df[col] if col in df.columns else pd.Series([None] * len(df), index=df.index)
         if dtype.startswith("datetime64"):
-            s = pd.to_datetime(s, utc=True, errors="coerce")
+            s = to_utc_ns(s)
         elif dtype == "int64":
             s = pd.to_numeric(s, errors="coerce").astype("Int64")
         elif dtype == "float64":

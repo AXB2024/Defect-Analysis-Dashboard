@@ -45,7 +45,7 @@ jobs:
           cd infra
           sam deploy --stack-name defect-dashboard --region "${{ vars.AWS_REGION || 'us-east-2' }}" \
             --no-confirm-changeset --no-fail-on-empty-changeset \
-            --parameter-overrides AlertEmail="${{ vars.ALERT_EMAIL }}"
+            --parameter-overrides AlertEmail="${{ vars.ALERT_EMAIL }}" PandasLayerVersion=22
       - name: Smoke-invoke the ingestion Lambda once
         run: |
           aws lambda invoke --function-name defect-dashboard-ingest out.json --log-type None

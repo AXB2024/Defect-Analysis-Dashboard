@@ -12,6 +12,7 @@ Finally a run log (records, duration, API calls, DQ results, failures) is writte
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -187,12 +188,37 @@ def _github_token() -> str | None:
     return _TOKEN_CACHE[param]
 
 
+def emf_metrics(run: dict, function_name: str) -> str:
+    """CloudWatch Embedded Metric Format line: CloudWatch turns it into metrics on ingest."""
+    return json.dumps(
+        {
+            "_aws": {
+                "Timestamp": int(time.time() * 1000),
+                "CloudWatchMetrics": [
+                    {
+                        "Namespace": "DefectDashboard",
+                        "Dimensions": [["FunctionName"]],
+                        "Metrics": [
+                            {"Name": "FailedRepos", "Unit": "Count"},
+                            {"Name": "RecordsIngested", "Unit": "Count"},
+                        ],
+                    }
+                ],
+            },
+            "FunctionName": function_name,
+            "FailedRepos": len(run["failures"]),
+            "RecordsIngested": run["records_ingested"],
+        }
+    )
+
+
 def lambda_handler(event, context):  # noqa: ARG001 - Lambda signature
     store = open_store(os.environ["DATA_URI"])
     run = run_ingestion(store, GitHubClient(token=_github_token()))
     log.info(
         "run %s status=%s records=%s calls=%s", run["run_id"], run["status"], run["records_ingested"], run["github"]
     )
+    print(emf_metrics(run, os.environ.get("AWS_LAMBDA_FUNCTION_NAME", "local")), flush=True)
     if run["status"] == "failed":
         # Surface as a Lambda error so the CloudWatch alarm fires.
         raise RuntimeError(f"ingestion failed for all repos: {run['failures']}")
