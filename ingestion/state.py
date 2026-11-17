@@ -16,6 +16,11 @@ class RepoState:
     etag_since: str | None = None
     last_success_at: str | None = None
     caught_up: bool = False  # False while the initial backfill is still paging
+    # Set while a page-capped read is in progress: GitHub's cursor URL for the next page,
+    # the `since` that read started from, and the newest updated_at seen so far.
+    next_url: str | None = None
+    cursor_since: str | None = None
+    cursor_max_updated: str | None = None
 
 
 def _key(repo: str) -> str:
@@ -24,7 +29,10 @@ def _key(repo: str) -> str:
 
 def load_state(store: Store, repo: str) -> RepoState:
     data = store.get_json(_key(repo))
-    return RepoState(**data) if data else RepoState(repo=repo)
+    if not data:
+        return RepoState(repo=repo)
+    known = {f for f in RepoState.__dataclass_fields__}
+    return RepoState(**{k: v for k, v in data.items() if k in known})
 
 
 def save_state(store: Store, state: RepoState) -> None:

@@ -20,6 +20,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pandas as pd
+import requests
 
 from common import config
 from common.runlog import write_run_log
@@ -47,19 +48,56 @@ def since_for(state: RepoState, now: datetime, backfill_days: int) -> str:
     return _iso(now - timedelta(days=backfill_days))
 
 
+def next_watermark(items: list[dict], has_more: bool, current: str | None, seen_max: str | None = None) -> str | None:
+    """Where the next fresh (non-cursor) read should start.
+
+    GitHub's `sort=updated&direction=asc` listing is not strictly ordered by `updated_at`:
+    an item can sit among others updated months earlier (seen live: #307470, updated
+    2026-11-03, between items updated 2026-04-30). The old rule - max(updated_at) after
+    every run - therefore jumped the watermark past everything a page-capped run had not
+    read yet, silently dropping months of issues.
+
+    So the watermark only advances once the stream has been read to its end (no `next`
+    link); a capped run keeps it and resumes from GitHub's cursor instead. When the end is
+    reached, everything updated before the newest `updated_at` seen has been read, so that
+    is a safe resume point. It never moves backwards.
+    """
+    if has_more:
+        return current
+    candidates = [it["updated_at"] for it in items] + ([seen_max] if seen_max else [])
+    if not candidates:
+        return current
+    newest = max(candidates)
+    return newest if not current or newest > current else current
+
+
 def ingest_repo(
     store: Store, client: GitHubClient, repo: str, run_id: str, now: datetime, max_pages: int, backfill_days: int
 ) -> dict:
     t0 = time.perf_counter()
     state = load_state(store, repo)
-    since = since_for(state, now, backfill_days)
-    etag = state.etag if state.etag_since == since else None
+    resuming = bool(state.next_url)
+    since = state.cursor_since if resuming and state.cursor_since else since_for(state, now, backfill_days)
+    etag = None if resuming else (state.etag if state.etag_since == since else None)
     calls_before = client.stats.calls
 
-    res = client.fetch_issues_since(repo, since, etag=etag, max_pages=max_pages)
+    cursor_expired = False
+    if resuming:
+        try:
+            res = client.fetch_issues_since(repo, since, max_pages=max_pages, resume_url=state.next_url)
+        except requests.HTTPError as e:
+            # Expired/invalid cursor: restart from the same `since` (re-reads, never skips).
+            log.warning("cursor for %s rejected (%s); restarting from since=%s", repo, e, since)
+            cursor_expired, resuming = True, False
+            state.next_url, state.cursor_max_updated = None, None
+            res = client.fetch_issues_since(repo, since, max_pages=max_pages)
+    else:
+        res = client.fetch_issues_since(repo, since, etag=etag, max_pages=max_pages)
     out: dict = {
         "since": since,
         "conditional_request": etag is not None,
+        "resumed_from_cursor": resuming,
+        "cursor_expired": cursor_expired,
         "not_modified": res.not_modified,
         "pages": len(res.pages),
         "has_more": res.has_more,
@@ -114,10 +152,13 @@ def ingest_repo(
             }
 
     # 2. advance state only after processed/ is durable
-    if items:
-        max_updated = max(it["updated_at"] for it in items)
-        if not state.watermark or max_updated > state.watermark:
-            state.watermark = max_updated
+    page_max = max((it["updated_at"] for it in items), default=None)
+    seen_max = max(filter(None, [state.cursor_max_updated, page_max]), default=None)
+    if res.has_more:  # capped: remember exactly where to continue
+        state.next_url, state.cursor_since, state.cursor_max_updated = res.next_url, since, seen_max
+    else:  # stream read to its end: safe to advance
+        state.watermark = next_watermark(items, False, state.watermark, seen_max)
+        state.next_url = state.cursor_since = state.cursor_max_updated = None
     state.etag, state.etag_since = res.etag, since
     state.last_success_at = _iso(now)
     state.caught_up = not res.has_more

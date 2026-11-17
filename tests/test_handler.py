@@ -114,20 +114,44 @@ def test_one_repo_failing_is_partial_and_does_not_advance_its_state(local_store)
     assert load_state(local_store, "o/r").watermark is not None
 
 
-def test_capped_backfill_resumes_from_watermark(local_store):
+def test_capped_backfill_resumes_from_github_cursor(local_store):
     p1 = [make_raw_issue(1, T0, updated=T0)]
     p2 = [make_raw_issue(2, T0, updated=T0 + timedelta(hours=1))]
+    nxt = f"{URL}?after=CURSOR&page=2"
     with responses.RequestsMock() as rsps:
-        rsps.get(URL, json=p1, headers={"Link": f'<{URL}?page=2>; rel="next"', "ETag": '"a"'})
+        rsps.get(URL, json=p1, headers={"Link": f'<{nxt}>; rel="next"', "ETag": '"a"'})
         run = handler.run_ingestion(local_store, client(), repos=["o/r"], now=NOW, max_pages=1)
     assert run["repos"]["o/r"]["has_more"]
     st = load_state(local_store, "o/r")
-    assert not st.caught_up and st.watermark == p1[0]["updated_at"]
+    assert not st.caught_up and st.watermark is None  # watermark untouched while capped
+    assert st.next_url == nxt and st.cursor_since == run["repos"]["o/r"]["since"]
     with responses.RequestsMock() as rsps:
-        rsps.get(URL, json=p2)
-        run = handler.run_ingestion(local_store, client(), repos=["o/r"], now=NOW, max_pages=1)
-    assert run["repos"]["o/r"]["since"] == iso(T0 - timedelta(minutes=5))
-    assert load_state(local_store, "o/r").caught_up
+        rsps.get(URL, json=p2, match=[responses.matchers.query_param_matcher({"after": "CURSOR", "page": "2"})])
+        run2 = handler.run_ingestion(local_store, client(), repos=["o/r"], now=NOW, max_pages=1)
+        assert rsps.calls[0].request.url == nxt  # resumed at the exact cursor
+    assert run2["repos"]["o/r"]["resumed_from_cursor"]
+    st = load_state(local_store, "o/r")
+    assert st.caught_up and st.next_url is None and st.watermark == p2[0]["updated_at"]
+    assert sorted(read_processed(local_store)["number"].tolist()) == [1, 2]
+
+
+def test_expired_cursor_restarts_from_same_since_without_skipping(local_store):
+    nxt = f"{URL}?after=OLD&page=2"
+    with responses.RequestsMock() as rsps:
+        rsps.get(URL, json=[make_raw_issue(1, T0)], headers={"Link": f'<{nxt}>; rel="next"'})
+        first = handler.run_ingestion(local_store, client(), repos=["o/r"], now=NOW, max_pages=1)
+    since = first["repos"]["o/r"]["since"]
+    with responses.RequestsMock() as rsps:
+        rsps.get(
+            URL,
+            status=422,
+            json={"message": "cursor expired"},
+            match=[responses.matchers.query_param_matcher({"after": "OLD", "page": "2"})],
+        )
+        rsps.get(URL, json=[make_raw_issue(1, T0), make_raw_issue(2, T0)])
+        run = handler.run_ingestion(local_store, client(), repos=["o/r"], now=NOW + timedelta(days=1), max_pages=1)
+    r = run["repos"]["o/r"]
+    assert r["cursor_expired"] and r["since"] == since  # same since, not "now - backfill_days"
     assert sorted(read_processed(local_store)["number"].tolist()) == [1, 2]
 
 
@@ -194,3 +218,63 @@ def test_lambda_handler_emits_metric_on_partial_failure(s3_store, env, capsys):
     assert out["status"] == "partial"
     emf = [json.loads(x) for x in capsys.readouterr().out.splitlines() if '"_aws"' in x]
     assert emf and emf[-1]["FailedRepos"] == 1  # ...but the metric still lets the alarm fire
+
+
+# --------------------------------------------------------------------------- watermark / out-of-order
+def _it(n, updated):
+    return make_raw_issue(n, T0 - timedelta(days=30), updated=updated)
+
+
+def test_next_watermark_only_advances_when_stream_fully_read():
+    items = [_it(1, T0), _it(2, T0 + timedelta(days=90)), _it(3, T0 + timedelta(minutes=1))]
+    # capped run: a stray newer item must NOT move the watermark
+    assert handler.next_watermark(items, has_more=True, current=iso(T0 - timedelta(days=1))) == iso(
+        T0 - timedelta(days=1)
+    )
+    # fully read: newest updated_at is safe, including what earlier capped runs saw
+    assert handler.next_watermark(items, has_more=False, current=None) == iso(T0 + timedelta(days=90))
+    assert handler.next_watermark([], has_more=False, current=None, seen_max=iso(T0)) == iso(T0)
+
+
+def test_next_watermark_never_moves_backwards():
+    older = [_it(1, T0 - timedelta(days=1))]
+    assert handler.next_watermark(older, has_more=False, current=iso(T0)) == iso(T0)
+    assert handler.next_watermark([], has_more=False, current=iso(T0)) == iso(T0)
+
+
+def _fake_github(rsps, stream):
+    """Serve `stream` [(sort_key, item)] like GitHub: filter by since on the sort key,
+    order by the sort key (which can disagree with item updated_at), 1 item per page."""
+    import json
+    from urllib.parse import parse_qs, urlparse
+
+    def cb(request):
+        q = parse_qs(urlparse(request.url).query)
+        since = q["since"][0]
+        page = int(q.get("page", ["1"])[0])
+        rows = [it for key, it in sorted(stream, key=lambda kv: kv[0]) if key >= since]
+        chunk = rows[page - 1 : page]
+        headers = {"ETag": f'"{since}-{page}"'}
+        if page < len(rows):
+            headers["Link"] = (
+                f'<{URL}?state=all&sort=updated&direction=asc&since={since}&per_page=100&page={page + 1}>; rel="next"'
+            )
+        return 200, headers, json.dumps(chunk)
+
+    rsps.add_callback(responses.GET, URL, callback=cb, content_type="application/json")
+
+
+def test_capped_backfill_with_out_of_order_item_ingests_everything(local_store):
+    """Regression: max(updated_at) after a capped run jumped past unread issues."""
+    base = NOW - timedelta(days=10)
+    stray = _it(2, NOW - timedelta(hours=1))  # sort key says day 0, updated_at says today
+    stream = [(iso(base), _it(1, base)), (iso(base + timedelta(seconds=1)), stray)]
+    stream += [(iso(base + timedelta(days=d)), _it(10 + d, base + timedelta(days=d))) for d in range(1, 6)]
+    with responses.RequestsMock() as rsps:
+        _fake_github(rsps, stream)
+        for _ in range(20):
+            run = handler.run_ingestion(local_store, client(), repos=["o/r"], now=NOW, max_pages=2, backfill_days=30)
+            if not run["repos"]["o/r"]["has_more"]:
+                break
+    got = sorted(read_processed(local_store)["number"].tolist())
+    assert got == [1, 2, 10 + 1, 10 + 2, 10 + 3, 10 + 4, 10 + 5]

@@ -56,6 +56,7 @@ class FetchResult:
     etag: str | None = None  # ETag of page 1 (for the next conditional request)
     has_more: bool = False  # stopped because of max_pages / rate-limit budget
     stopped_reason: str | None = None
+    next_url: str | None = None  # GitHub's cursor URL for the first unread page (when has_more)
 
     @property
     def items(self) -> list[dict]:
@@ -124,9 +125,11 @@ class GitHubClient:
         etag: str | None = None,
         max_pages: int = 40,
         per_page: int = 100,
+        resume_url: str | None = None,
     ) -> FetchResult:
         """Fetch issues (and PRs, which the endpoint mixes in) updated at/after `since_iso`,
-        oldest-update first."""
+        oldest-update first. `resume_url` continues a previous page-capped read exactly where
+        it stopped, using GitHub's opaque cursor link (no ETag: it's not a page-1 request)."""
         url = f"{self.api}/repos/{repo}/issues"
         params = {
             "state": "all",
@@ -136,21 +139,21 @@ class GitHubClient:
             "per_page": per_page,
         }
         result = FetchResult()
-        resp = self._get(url, params=params, etag=etag)
+        resp = self._get(resume_url) if resume_url else self._get(url, params=params, etag=etag)
         if resp.status_code == 304:
             result.not_modified = True
             result.etag = etag
             return result
-        result.etag = resp.headers.get("ETag")
+        result.etag = None if resume_url else resp.headers.get("ETag")
         result.pages.append(_json_list(resp))
 
         next_url = resp.links.get("next", {}).get("url")
         while next_url:
             if len(result.pages) >= max_pages:
-                result.has_more, result.stopped_reason = True, "max_pages"
+                result.has_more, result.stopped_reason, result.next_url = True, "max_pages", next_url
                 break
             if self.stats.rate_remaining is not None and self.stats.rate_remaining < self.min_rate_remaining:
-                result.has_more, result.stopped_reason = True, "rate_budget"
+                result.has_more, result.stopped_reason, result.next_url = True, "rate_budget", next_url
                 break
             resp = self._get(next_url)
             result.pages.append(_json_list(resp))
