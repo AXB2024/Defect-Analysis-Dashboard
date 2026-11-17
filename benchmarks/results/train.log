@@ -1,36 +1,36 @@
 {
-  "version": "20261114T193712Z",
-  "duration_s": 119.6,
+  "version": "20261117T045223Z",
+  "duration_s": 439.14,
   "data": {
     "store": "/Users/abhinavbinu/Defect-Analysis-Dashboard/data",
-    "as_of": "2026-11-14 19:30:07.493404+00:00",
+    "as_of": "2026-11-17 04:43:02.715853+00:00",
     "window_days": 365,
-    "n_issues": 11894,
+    "n_issues": 43592,
     "by_repo": {
-      "microsoft/vscode": 11245,
-      "react/react": 649
+      "microsoft/vscode": 42942,
+      "react/react": 650
     },
     "created_period": [
-      "2025-11-14",
-      "2026-11-14"
+      "2025-11-17",
+      "2026-11-17"
     ]
   }
 }
 regression: {
   "baseline_median": {
-    "mae": 35.24168641213639,
-    "rmse": 51.28610178491213,
-    "value_days": 7.020185185185185
+    "mae": 35.880951450274054,
+    "rmse": 50.97214832928741,
+    "value_days": 7.458240740740741
   },
   "random_forest": {
-    "mae": 33.02581070350311,
-    "rmse": 48.52435067861789
+    "mae": 34.33243180387758,
+    "rmse": 37.76590826843189
   },
-  "mae_improvement_pct": 6.287655144307121,
-  "rmse_improvement_pct": 5.384989324937764
+  "mae_improvement_pct": 4.315715118487037,
+  "rmse_improvement_pct": 25.908737406046345
 }
-bucket: {'baseline_majority': {'accuracy': 0.3525423728813559, 'macro_f1': 0.13032581453634084}, 'logreg': {'accuracy': 0.4800847457627119, 'macro_f1': 0.4024158140828563}}
-category: {'baseline_majority': {'accuracy': 0.6633986928104575, 'macro_f1': 0.1595284872298625}, 'tfidf_logreg': {'accuracy': 0.7352941176470589, 'macro_f1': 0.5395929319769583}}
-real 136.70
-user 405.54
-sys 6.11
+bucket: {'baseline_majority': {'accuracy': 0.2615914401672611, 'macro_f1': 0.1036751803470462}, 'logreg': {'accuracy': 0.5320378797195917, 'macro_f1': 0.3980874508025096}}
+category: {'baseline_majority': {'accuracy': 0.6774744027303754, 'macro_f1': 0.16154628687690742}, 'tfidf_logreg': {'accuracy': 0.7674914675767918, 'macro_f1': 0.6060273752966563}}
+real 477.75
+user 1531.26
+sys 14.17

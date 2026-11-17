@@ -77,7 +77,7 @@ ml/          features.py · labels.py (bucket/censoring) · evaluate.py · model
 app/         streamlit_app.py · data.py (cached, read-only) · views.py
 infra/       template.yaml (SAM) · bootstrap.yaml (GitHub OIDC roles) · samconfig.toml
 benchmarks/  cold_load.py · schedule_local.py · summarize_runs.py · report_tables.py · legacy_app.py · results/
-tests/       99 tests: unit + moto (S3/SSM) + responses (GitHub) + training smoke + headless app render
+tests/       107 tests: unit + moto (S3/SSM) + responses (GitHub) + training smoke + headless app render
 .github/     ci.yml (PRs) · deploy.yml (main) · train.yml (daily)
 ```
 
@@ -92,8 +92,8 @@ python3.12 -m venv .venv && source .venv/bin/activate
 make install                                   # requirements.txt + requirements-dev.txt
 echo "GITHUB_TOKEN=<token, no scopes needed>" > .env
 
-python -m ingestion.run --store data --until-caught-up --max-pages 100   # 365-day backfill (~6 min)
-python -m ml.train --store data                                          # ~2.3 min on an M1 (incl. batch scoring)
+python -m ingestion.run --store data --until-caught-up --max-pages 100   # 365-day backfill (~17 min, ~920 API calls)
+python -m ml.train --store data                                          # ~8 min on an M1 (incl. batch scoring)
 DATA_URI=data streamlit run app/streamlit_app.py
 
 make lint && make test                         # ruff + pytest with coverage
@@ -175,28 +175,30 @@ make teardown        # empties the bucket, deletes both stacks and the SSM param
 
 ## Results summary
 
-Measured locally on 2026-11-14 (the AWS stack itself hasn't been deployed yet). Full
-tables, commands and caveats are in [RESULTS.md](RESULTS.md).
+Measured 2026-11-14 to 2026-11-17 on a local lake and the deployed S3 lake (us-east-2).
+Full tables, commands and caveats are in [RESULTS.md](RESULTS.md), including a correction:
+the first backfill silently skipped months of issues, so every number here comes from the
+rebuilt data.
 
 | area | result |
 |---|---|
-| Backfill | 24,055 issues in 346.19 s, 339 API calls, 0 rows quarantined |
+| Backfill (365 days) | 58,985 issues in 1,023.19 s, 919 API calls, 0 retries, 0 rows quarantined; local and S3 lakes identical |
 | ETag | authenticated 304 responses cost 0 rate-limit units (verified against the live API) |
-| Dashboard cold load | 13.76 s → **4.81 s** median (2.86×); GitHub calls per load 15 → **0** |
-| Bucket classifier (time-split test) | macro-F1 **0.402** vs 0.130 majority baseline; accuracy 0.480 vs 0.353 |
-| Category classifier | macro-F1 **0.540** vs 0.160 majority baseline |
-| Resolution-time regressor | MAE 33.03 vs 35.24 median baseline: **only 6.29% better** (weak; see next steps) |
-| Tests | 99 passed, 95.90% line coverage |
+| Dashboard cold load | 16.49 s → **3.58 s** median (4.61×, side-by-side run); GitHub calls per load 15 → **0** |
+| Bucket classifier (time-split test, n=8,131) | macro-F1 **0.398** vs 0.104 majority baseline; accuracy 0.532 vs 0.262 |
+| Category classifier (n=2,344) | macro-F1 **0.606** vs 0.162 majority baseline |
+| Resolution-time regressor (n=7,014) | MAE 34.33 vs 35.88 median baseline: **only 4.32% better** (weak); RMSE 25.91% better |
+| Tests | 107 passed, 96.02% line coverage |
 
 ## Known limitations
 
 - The models are modest. Resolution time is driven by triage decisions that the text at
-  creation time barely reveals, and there's measurable drift between periods. Details and
+  creation time barely reveals, and the class mix shifts between periods. Details and
   next steps are in [RESULTS.md](RESULTS.md#weak-results-and-next-steps).
 - Categories are weak labels derived from area labels. About two thirds of issues have no
   mappable area label (`Other`), which is why the NLP category model exists.
-- The deployed stack hasn't been benchmarked yet. All measurements in RESULTS.md come from
-  running the same code against a local lake.
+- Dashboard cold load and ingestion latency were benchmarked against the local lake only;
+  their S3 / deployed-schedule equivalents are still to be measured (listed in RESULTS.md).
 
 ## Author
 

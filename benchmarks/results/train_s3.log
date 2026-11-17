@@ -1,0 +1,36 @@
+{
+  "version": "20261117T053422Z",
+  "duration_s": 451.53,
+  "data": {
+    "store": "s3://defect-dashboard-lake-444301506063-us-east-2",
+    "as_of": "2026-11-17 04:59:06.516664+00:00",
+    "window_days": 365,
+    "n_issues": 43593,
+    "by_repo": {
+      "microsoft/vscode": 42943,
+      "react/react": 650
+    },
+    "created_period": [
+      "2025-11-17",
+      "2026-11-17"
+    ]
+  }
+}
+regression: {
+  "baseline_median": {
+    "mae": 35.880951450274054,
+    "rmse": 50.97214832928741,
+    "value_days": 7.458240740740741
+  },
+  "random_forest": {
+    "mae": 34.33243180387758,
+    "rmse": 37.76590826843189
+  },
+  "mae_improvement_pct": 4.315715118487037,
+  "rmse_improvement_pct": 25.908737406046345
+}
+bucket: {'baseline_majority': {'accuracy': 0.2615914401672611, 'macro_f1': 0.1036751803470462}, 'logreg': {'accuracy': 0.5320378797195917, 'macro_f1': 0.3980874508025096}}
+category: {'baseline_majority': {'accuracy': 0.6774744027303754, 'macro_f1': 0.16154628687690742}, 'tfidf_logreg': {'accuracy': 0.7674914675767918, 'macro_f1': 0.6060273752966563}}
+real 3203.39
+user 1524.05
+sys 12.76

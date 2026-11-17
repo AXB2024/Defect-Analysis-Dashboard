@@ -69,6 +69,7 @@ def main() -> int:
     p.add_argument("--apps", default="legacy,new")
     p.add_argument("--one", choices=list(APPS), help=argparse.SUPPRESS)
     p.add_argument("--out", default=str(ROOT / "benchmarks/results/cold_load.json"))
+    p.add_argument("--trial-timeout", type=int, default=300, help="seconds before a trial is killed and retried")
     args = p.parse_args()
 
     if args.one:
@@ -82,22 +83,37 @@ def main() -> int:
         env |= {k: v for k, v in dotenv_values(ROOT / ".env").items() if v}  # GITHUB_TOKEN for legacy app
     except ImportError:
         pass
-    results: dict = {"data_uri": args.data_uri, "trials": args.trials, "runs": {}}
+    results: dict = {"data_uri": args.data_uri, "trials": args.trials, "runs": {}, "discarded_attempts": []}
     for app in args.apps.split(","):
         runs = []
         for i in range(args.trials):
-            out = subprocess.run(
-                [sys.executable, "-m", "benchmarks.cold_load", "--one", app],
-                cwd=ROOT,
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if out.returncode != 0:
-                print(out.stderr[-2000:], file=sys.stderr)
-                raise SystemExit(f"{app} trial {i} failed")
-            r = json.loads(out.stdout.strip().splitlines()[-1])
+            # The legacy app calls GitHub with no network timeout, so one stalled connection can
+            # hang a trial forever (seen: 8h+). Time-box each attempt; retry once; record discards.
+            r = None
+            for attempt in range(2):
+                try:
+                    out = subprocess.run(
+                        [sys.executable, "-m", "benchmarks.cold_load", "--one", app],
+                        cwd=ROOT,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=args.trial_timeout,
+                    )
+                except subprocess.TimeoutExpired:
+                    reason = f"timeout after {args.trial_timeout}s"
+                else:
+                    if out.returncode == 0:
+                        r = json.loads(out.stdout.strip().splitlines()[-1])
+                        break
+                    reason = "error: " + out.stderr.strip().splitlines()[-1][:200]
+                results["discarded_attempts"].append(
+                    {"app": app, "trial": i + 1, "attempt": attempt + 1, "reason": reason}
+                )
+                print(f"{app} trial {i + 1} attempt {attempt + 1} discarded ({reason})", flush=True)
+            if r is None:
+                raise SystemExit(f"{app} trial {i + 1} failed twice")
             runs.append(r)
             print(
                 f"{app} trial {i + 1}: cold={r['cold_s']:.2f}s warm={r['warm_rerun_s']:.2f}s "

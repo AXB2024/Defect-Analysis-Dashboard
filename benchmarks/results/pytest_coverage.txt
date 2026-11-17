@@ -1,5 +1,20 @@
-........................................................................ [ 72%]
-...........................                                              [100%]
+============================= test session starts ==============================
+platform darwin -- Python 3.12.15, pytest-9.2.0, pluggy-1.7.0
+rootdir: /Users/abhinavbinu/Defect-Analysis-Dashboard
+configfile: pyproject.toml
+testpaths: tests
+plugins: cov-7.1.0
+collected 107 items
+
+tests/test_clean.py ......                                               [  5%]
+tests/test_github_client.py ..........                                   [ 14%]
+tests/test_handler.py ...............                                    [ 28%]
+tests/test_labels.py ............................                        [ 55%]
+tests/test_ml.py ................                                        [ 70%]
+tests/test_quality.py ..........                                         [ 79%]
+tests/test_storage_and_lake.py ...............                           [ 93%]
+tests/test_train_and_app.py .......                                      [100%]
+
 ================================ tests coverage ================================
 ______________ coverage: platform darwin, python 3.12.15-final-0 _______________
 
@@ -11,22 +26,22 @@ app/views.py                   134     11    92%   104-105, 115-116, 139-140, 20
 common/config.py                20      1    95%   22
 common/runlog.py                18      0   100%
 common/storage.py              118      3    97%   148, 177-178
-ingestion/github_client.py     104      4    96%   118, 173-174, 176
-ingestion/handler.py           109      1    99%   182
-ingestion/state.py              19      0   100%
+ingestion/github_client.py     105      4    96%   119, 176-177, 179
+ingestion/handler.py           134      1    99%   224
+ingestion/state.py              25      0   100%
 ml/evaluate.py                  24      0   100%
 ml/features.py                  47      0   100%
 ml/labels.py                    33      1    97%   27
 ml/models.py                    15      0   100%
 ml/predict.py                   62      2    97%   40, 78
 ml/train.py                    159     17    89%   126, 259, 262-263, 276, 325-335, 339
-transform/clean.py              61      0   100%
+transform/clean.py              63      0   100%
 transform/labels.py             33      0   100%
 transform/lake.py               70      0   100%
 transform/quality.py            86      0   100%
 ----------------------------------------------------------
-TOTAL                         1196     49    96%
+TOTAL                         1230     49    96%
 
 5 empty files skipped.
-Required test coverage of 85% reached. Total coverage: 95.90%
-99 passed in 15.24s
+Required test coverage of 85% reached. Total coverage: 96.02%
+============================= 107 passed in 17.24s =============================
